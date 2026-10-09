@@ -53,8 +53,8 @@ export function LoginForm({
       setLoading(true);
       const { user, error } = await loginWithEmail(email, password, role, rememberMe);
 
-      if (error) {
-        setErrorMessage(error);
+      if (error || !user) {
+        setErrorMessage(error || "Invalid credentials. Please try again.");
         return;
       }
 

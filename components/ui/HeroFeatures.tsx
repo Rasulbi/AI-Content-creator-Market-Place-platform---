@@ -37,8 +37,9 @@ export function HeroFeatures() {
           <div key={idx} className="flex flex-col items-center sm:items-start text-center sm:text-left group">
             <div
               className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 border transition-transform group-hover:scale-105 duration-200 ${feature.color}`}
+              style={{ width: "40px", height: "40px" }}
             >
-              <Icon className="w-5 h-5" strokeWidth={2.2} />
+              <Icon className="w-5 h-5" strokeWidth={2.2} size={20} />
             </div>
             <h4 className="text-sm font-bold text-slate-800 tracking-tight">
               {feature.title}

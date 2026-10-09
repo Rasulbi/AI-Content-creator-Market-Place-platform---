@@ -19,17 +19,32 @@ export function Logo({ className = "", size = "md", href = "/" }: LogoProps) {
     lg: "text-lg",
   };
 
+  const pixelSizes = {
+    sm: 32,
+    md: 40,
+    lg: 48,
+  };
+
   const content = (
     <div className={`flex items-center gap-3 select-none ${className}`}>
       {/* Brand Icon (Stylized Gradient A Glyph) */}
       <div
         className={`${iconSizes[size]} relative flex items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 shadow-md shadow-indigo-500/20 text-white font-black overflow-hidden flex-shrink-0 transition-transform hover:scale-105`}
+        style={{
+          width: `${pixelSizes[size]}px`,
+          height: `${pixelSizes[size]}px`,
+          minWidth: `${pixelSizes[size]}px`,
+          minHeight: `${pixelSizes[size]}px`,
+        }}
       >
         <svg
           viewBox="0 0 32 32"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           className="w-6 h-6 text-white drop-shadow-sm"
+          width={pixelSizes[size] * 0.6}
+          height={pixelSizes[size] * 0.6}
+          style={{ maxWidth: "26px", maxHeight: "26px" }}
         >
           {/* Stylized Modern Creator Marketplace Delta / A */}
           <path

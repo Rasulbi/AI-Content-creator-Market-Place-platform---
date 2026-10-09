@@ -49,8 +49,11 @@ export function HeroIllustration() {
             <div className="grid grid-cols-3 gap-2.5">
               {/* Creator 1 */}
               <div className="bg-white rounded-lg p-2 shadow-sm border border-slate-100 flex flex-col items-center text-center">
-                <div className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-purple-100">
-                  <Image src="/images/anjali.jpg" alt="Creator" fill className="object-cover" />
+                <div
+                  className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-purple-100"
+                  style={{ width: "32px", height: "32px", position: "relative" }}
+                >
+                  <Image src="/images/anjali.jpg" alt="Creator" fill sizes="32px" className="object-cover" />
                 </div>
                 <div className="h-1.5 w-10 bg-slate-800 rounded-full mb-1" />
                 <div className="h-1 w-7 bg-purple-400 rounded-full" />
@@ -58,8 +61,11 @@ export function HeroIllustration() {
 
               {/* Creator 2 */}
               <div className="bg-white rounded-lg p-2 shadow-sm border border-slate-100 flex flex-col items-center text-center">
-                <div className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-blue-100">
-                  <Image src="/images/priya.jpg" alt="Creator" fill className="object-cover" />
+                <div
+                  className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-blue-100"
+                  style={{ width: "32px", height: "32px", position: "relative" }}
+                >
+                  <Image src="/images/priya.jpg" alt="Creator" fill sizes="32px" className="object-cover" />
                 </div>
                 <div className="h-1.5 w-10 bg-slate-800 rounded-full mb-1" />
                 <div className="h-1 w-7 bg-blue-400 rounded-full" />
@@ -67,8 +73,11 @@ export function HeroIllustration() {
 
               {/* Creator 3 */}
               <div className="bg-white rounded-lg p-2 shadow-sm border border-slate-100 flex flex-col items-center text-center">
-                <div className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-emerald-100">
-                  <Image src="/images/neha.jpg" alt="Creator" fill className="object-cover" />
+                <div
+                  className="w-8 h-8 rounded-full overflow-hidden relative mb-1.5 ring-2 ring-emerald-100"
+                  style={{ width: "32px", height: "32px", position: "relative" }}
+                >
+                  <Image src="/images/neha.jpg" alt="Creator" fill sizes="32px" className="object-cover" />
                 </div>
                 <div className="h-1.5 w-10 bg-slate-800 rounded-full mb-1" />
                 <div className="h-1 w-7 bg-emerald-400 rounded-full" />
@@ -94,8 +103,11 @@ export function HeroIllustration() {
 
         {/* Floating Left Creator Highlight Card */}
         <div className="absolute -left-2 sm:left-2 top-8 z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3 shadow-xl border border-purple-100 flex items-center gap-3 transition-transform hover:-translate-y-1">
-          <div className="w-11 h-11 rounded-xl overflow-hidden relative ring-2 ring-purple-500/20 shadow-sm flex-shrink-0">
-            <Image src="/images/anjali.jpg" alt="Anjali" fill className="object-cover" />
+          <div
+            className="w-11 h-11 rounded-xl overflow-hidden relative ring-2 ring-purple-500/20 shadow-sm flex-shrink-0"
+            style={{ width: "44px", height: "44px", position: "relative" }}
+          >
+            <Image src="/images/anjali.jpg" alt="Anjali" fill sizes="44px" className="object-cover" />
           </div>
           <div>
             <div className="flex items-center gap-1">
@@ -110,8 +122,11 @@ export function HeroIllustration() {
 
         {/* Floating Right Creator Highlight Card */}
         <div className="absolute -right-2 sm:right-2 bottom-8 z-20 bg-white/95 backdrop-blur-md rounded-2xl p-3 shadow-xl border border-blue-100 flex items-center gap-3 transition-transform hover:-translate-y-1">
-          <div className="w-11 h-11 rounded-xl overflow-hidden relative ring-2 ring-blue-500/20 shadow-sm flex-shrink-0">
-            <Image src="/images/priya.jpg" alt="Priya" fill className="object-cover" />
+          <div
+            className="w-11 h-11 rounded-xl overflow-hidden relative ring-2 ring-blue-500/20 shadow-sm flex-shrink-0"
+            style={{ width: "44px", height: "44px", position: "relative" }}
+          >
+            <Image src="/images/priya.jpg" alt="Priya" fill sizes="44px" className="object-cover" />
           </div>
           <div>
             <div className="flex items-center gap-1">

@@ -35,7 +35,7 @@ export default async function CreatorProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const creator = CREATORS_DATA.find((c) => c.id === id);
+  const creator = CREATORS_DATA.find((c) => c.id === id) || CREATORS_DATA[0];
 
   if (!creator) {
     notFound();

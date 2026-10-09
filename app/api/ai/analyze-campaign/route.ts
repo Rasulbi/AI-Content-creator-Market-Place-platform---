@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result,
+      engine: result.engine,
+      provider: result.provider,
+      isFallback: result.isFallback,
+      fallbackReason: result.fallbackReason,
     });
   } catch (err) {
     if (err instanceof ZodError) {

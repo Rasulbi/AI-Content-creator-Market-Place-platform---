@@ -34,8 +34,11 @@ export function CreatorIllustration() {
 
             {/* Creator Studio Mockup */}
             <div className="flex items-center gap-3 bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm mb-2">
-              <div className="w-10 h-10 rounded-full overflow-hidden relative ring-2 ring-blue-500/30 flex-shrink-0">
-                <Image src="/images/anjali.jpg" alt="Creator Studio" fill className="object-cover" />
+              <div
+                className="w-10 h-10 rounded-full overflow-hidden relative ring-2 ring-blue-500/30 flex-shrink-0"
+                style={{ width: "40px", height: "40px", position: "relative" }}
+              >
+                <Image src="/images/anjali.jpg" alt="Creator Studio" fill sizes="40px" className="object-cover" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">

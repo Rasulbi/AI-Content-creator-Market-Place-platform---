@@ -1,11 +1,19 @@
 /**
  * Model Provider Abstraction Interface
- * Decouples the marketplace business logic from specific LLM vendors
- * Allows swapping Google Gemini with Anthropic Claude, OpenAI, or local models.
+ * Decouples the marketplace business logic from specific LLM vendors.
+ * Supports OpenRouter API (primary) and xAI Grok API (alternative).
  */
 
+export type AIProviderId = "openrouter" | "grok";
+
 export interface AIModelProvider {
+  readonly id: AIProviderId;
   readonly name: string;
+  readonly model: string;
+
+  /**
+   * Returns true if API key and required configuration are present and valid
+   */
   isConfigured(): boolean;
 
   /**

@@ -39,9 +39,9 @@ export function AccountTypeCard({
           }`}
         >
           {isBrand ? (
-            <Building2 className="w-7 h-7" strokeWidth={2.2} />
+            <Building2 className="w-7 h-7" strokeWidth={2.2} size={28} />
           ) : (
-            <User className="w-7 h-7" strokeWidth={2.2} />
+            <User className="w-7 h-7" strokeWidth={2.2} size={28} />
           )}
         </div>
 
@@ -66,7 +66,7 @@ export function AccountTypeCard({
         } group-hover:translate-y-[-1px]`}
       >
         <span>{buttonText}</span>
-        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" size={16} />
       </Link>
     </div>
   );

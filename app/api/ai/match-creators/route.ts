@@ -32,11 +32,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    aiLogger.error("API /api/ai/match-creators encountered an error", { error: err });
+    aiLogger.error("API /api/ai/match-creators encountered an error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error during creator matching",
+        error: err instanceof Error ? err.message : "Internal server error during creator matching",
       },
       { status: 500 }
     );

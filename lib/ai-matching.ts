@@ -10,7 +10,11 @@ export interface CampaignRequirements {
     | "Technology"
     | "Fitness & Wellness"
     | "Food"
-    | "Travel & Lifestyle";
+    | "Travel & Lifestyle"
+    | "Gaming"
+    | "Education"
+    | "Agriculture"
+    | string;
   campaignGoal: string;
   targetAudience: string;
   requiredSkills: string[];
@@ -128,6 +132,51 @@ export const CAMPAIGN_PRESETS: CampaignRequirements[] = [
     notes:
       "Must have 4K drone cinematography authorization, aesthetic sunrise footage, and detailed experiential travel storytelling.",
   },
+  {
+    id: "camp-gaming",
+    title: "PixelForge Gaming – RTX HyperPlay 16 Gaming Laptop Launch",
+    productOrService: "PixelForge RTX Gaming Laptop & Esports Setup",
+    category: "Gaming",
+    campaignGoal: "Drive high-intent pre-orders and tournament livestream showcases",
+    targetAudience: "Esports players, PC & mobile gamers, streamer community (16–32)",
+    requiredSkills: ["Esports Gameplay", "Hardware Benchmarks", "Live Streaming", "Shorts"],
+    contentType: ["Gameplay Clips", "Hardware Benchmarks"],
+    platform: "YouTube & Twitch",
+    budget: "₹ 35,000 - ₹ 55,000",
+    deadline: "2 Weeks",
+    notes:
+      "Showcase thermal benchmarks under heavy load, high refresh rate display, and zero frame-drop live scrims.",
+  },
+  {
+    id: "camp-education",
+    title: "EduNext Academy – Full-Stack AI & Cloud Bootcamp",
+    productOrService: "Full-Stack AI & Cloud Certification Course",
+    category: "Education",
+    campaignGoal: "Acquire high-intent engineering students and professional enrollments",
+    targetAudience: "Computer science students, junior developers, career switchers (19–35)",
+    requiredSkills: ["Coding Tutorials", "System Design", "Python & AI", "Career Roadmaps"],
+    contentType: ["YouTube Longform", "LinkedIn Guides"],
+    platform: "YouTube & LinkedIn",
+    budget: "₹ 28,000 - ₹ 45,000",
+    deadline: "3 Weeks",
+    notes:
+      "Focus on practical project demos, clear syllabus breakdown, and transparent career advancement ROI.",
+  },
+  {
+    id: "camp-agriculture",
+    title: "AgroTech India – Smart Drone Sprayer & Soil Sensor Kit",
+    productOrService: "Autonomous Agri-Spraying Drone & Soil pH Tester",
+    category: "Agriculture",
+    campaignGoal: "Demonstrate ground field efficiency and drive cooperative inquiries",
+    targetAudience: "Progressive farmers, agrarian cooperatives, agri-entrepreneurs (25–55)",
+    requiredSkills: ["Agri Drones", "Smart Farming", "Field Demos", "Regional Tutorials"],
+    contentType: ["Field Testing", "Drone Demos"],
+    platform: "YouTube & Instagram",
+    budget: "₹ 25,000 - ₹ 40,000",
+    deadline: "2 Weeks",
+    notes:
+      "Practical in-field demonstrations showing water savings, quick battery turnaround, and measurable crop protection.",
+  },
 ];
 
 /**
@@ -138,8 +187,7 @@ export const CAMPAIGN_PRESETS: CampaignRequirements[] = [
  * - Portfolio: 15%
  * - Experience: 10%
  * - Client Rating: 10%
- *
- * Plug-and-play architecture ready to connect Gemini API later.
+ * Plug-and-play architecture with configurable AI provider (OpenRouter / Grok).
  */
 export function analyzeCreatorMatch(
   creator: Creator,
