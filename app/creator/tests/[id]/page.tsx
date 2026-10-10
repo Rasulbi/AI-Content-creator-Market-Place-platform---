@@ -38,7 +38,9 @@ export default function TestSubmissionPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
-          <CreatorNav />
+          <div className="w-full bg-white border-b border-slate-200/80 px-6 py-4 flex items-center justify-between">
+            <span className="font-bold text-slate-800 text-sm">Skill Assessment Challenge</span>
+          </div>
           <div className="flex-1 max-w-5xl w-full mx-auto p-12 text-center text-xs text-slate-400">
             Loading assessment challenge...
           </div>

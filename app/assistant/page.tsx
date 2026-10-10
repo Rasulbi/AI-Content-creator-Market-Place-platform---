@@ -73,17 +73,30 @@ export default function AssistantWorkspacePage() {
   const [targetAudience, setTargetAudience] = useState("");
   const [brandOrProduct, setBrandOrProduct] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [sessionId, setSessionId] = useState<string>("");
 
-  const [sessionId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem("ai_assistant_page_session");
-      if (stored) return stored;
-      const created = `page_sess_${Date.now()}`;
-      sessionStorage.setItem("ai_assistant_page_session", created);
-      return created;
+  // Safely initialize session ID after component mounts to avoid prerendering errors
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const stored = sessionStorage.getItem("ai_assistant_page_session");
+        if (stored) {
+          setSessionId(stored);
+          return;
+        }
+        const created = `page_sess_${Date.now()}`;
+        try {
+          sessionStorage.setItem("ai_assistant_page_session", created);
+        } catch {
+          // sessionStorage restricted or quota exceeded
+        }
+        setSessionId(created);
+      }
+    } catch {
+      // Handle blocked storage in strict private mode
+      setSessionId(`page_sess_${Date.now()}`);
     }
-    return `page_sess_${Date.now()}`;
-  });
+  }, []);
 
   const defaultGreeting: EnrichedChatMessage = {
     role: "assistant",
@@ -137,6 +150,18 @@ Enter any custom request below, or select from the prompt templates to start!`,
     const text = (textToSend || input).trim();
     if (!text || loading) return;
 
+    // Ensure session ID is initialized before making the API request
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      activeSessionId = `page_sess_${Date.now()}`;
+      try {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("ai_assistant_page_session", activeSessionId);
+        }
+      } catch {}
+      setSessionId(activeSessionId);
+    }
+
     setError(null);
     if (!isRegenerate) {
       setInput("");
@@ -178,7 +203,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           userContext: contextPayload,
-          sessionId,
+          sessionId: activeSessionId,
         }),
       });
 

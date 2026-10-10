@@ -89,16 +89,26 @@ export function AIChatbotModal({
   const [showContextDrawer, setShowContextDrawer] = useState(false);
 
   // Session ID stored in browser session
-  const [sessionId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const existing = sessionStorage.getItem("ai_advisor_session_id");
-      if (existing) return existing;
-      const created = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      sessionStorage.setItem("ai_advisor_session_id", created);
-      return created;
+  const [sessionId, setSessionId] = useState<string>("");
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const existing = sessionStorage.getItem("ai_advisor_session_id");
+        if (existing) {
+          setSessionId(existing);
+          return;
+        }
+        const created = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        try {
+          sessionStorage.setItem("ai_advisor_session_id", created);
+        } catch {}
+        setSessionId(created);
+      }
+    } catch {
+      setSessionId(`sess_${Date.now()}`);
     }
-    return `sess_${Date.now()}`;
-  });
+  }, []);
 
   const defaultGreeting: EnrichedChatMessage = {
     role: "assistant",
@@ -138,7 +148,7 @@ export function AIChatbotModal({
 
   // Load persisted history from Supabase if available
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !sessionId) return;
 
     async function loadPastHistory() {
       try {
@@ -168,6 +178,18 @@ export function AIChatbotModal({
   const handleSend = async (textToSend?: string, isRegenerate = false) => {
     const text = (textToSend || input).trim();
     if (!text || loading) return;
+
+    // Ensure session ID is initialized before making the API request
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      activeSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      try {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("ai_advisor_session_id", activeSessionId);
+        }
+      } catch {}
+      setSessionId(activeSessionId);
+    }
 
     setError(null);
     if (!isRegenerate) {
@@ -212,7 +234,7 @@ export function AIChatbotModal({
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           userContext: contextPayload,
-          sessionId,
+          sessionId: activeSessionId,
         }),
       });
 
