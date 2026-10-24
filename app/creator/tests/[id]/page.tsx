@@ -75,6 +75,7 @@ function TestSubmissionInner() {
 
   // Submission & Results modal
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [resultsModalOpen, setResultsModalOpen] = useState(false);
   const [testResultData, setTestResultData] = useState<{
     score: number;
@@ -112,6 +113,23 @@ function TestSubmissionInner() {
         "1. Brief alignment and model parameter selection. 2. Iteration passes with seed locking. 3. Final post-processing and client delivery export."
       );
     }
+
+    // Fetch sanitized test from authoritative server endpoint
+    async function fetchSanitizedTest() {
+      try {
+        const res = await fetch(`/api/v1/tests/${encodeURIComponent(testId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data) {
+            setTest(json.data);
+            setTimeLeftSeconds((json.data.durationMinutes || 20) * 60);
+          }
+        }
+      } catch {
+        // Fallback to client-sanitized catalog
+      }
+    }
+    fetchSanitizedTest();
   }, [testId]);
 
   // Countdown timer effect
@@ -142,88 +160,91 @@ function TestSubmissionInner() {
     }));
   };
 
-  const handleSubmitTest = (e: React.FormEvent) => {
+  const handleSubmitTest = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmissionError(null);
     setIsSubmitting(true);
     setTimerRunning(false);
 
-    // Calculate Quiz Score
-    let correctCount = 0;
-    test.questions.forEach((q) => {
-      if (answers[q.id] === q.correctIndex) {
-        correctCount++;
+    try {
+      // 1. Submit answers and practical proofs to authoritative server endpoint
+      const res = await fetch("/api/v1/tests/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          test_id: test.id,
+          answers,
+          evidence_media_urls: [],
+          user_prompt: userPrompt,
+          user_workflow_notes: userWorkflowNotes,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json.error || `Server rejected assessment submission (HTTP ${res.status}).`);
       }
-    });
 
-    const quizScorePercent =
-      test.questions.length > 0
-        ? Math.round((correctCount / test.questions.length) * 100)
-        : 85;
+      const serverData = json.data;
+      const passed = Boolean(serverData.passed ?? (serverData.status === "passed"));
+      const finalScore = Number(serverData.score) || 0;
+      const certId = serverData.certificateId || `CERT-${test.id.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Evaluate Practical Prompt Score
-    let practicalScore = 80;
-    if (userPrompt.length > 50) practicalScore += 10;
-    if (userPrompt.includes("--") || userPrompt.includes("fps") || userPrompt.includes("dB")) practicalScore += 5;
-    if (userWorkflowNotes.length > 40) practicalScore += 5;
-    practicalScore = Math.min(practicalScore, 100);
+      const result = {
+        score: finalScore,
+        passed,
+        quizScore: serverData.quizScore ?? finalScore,
+        promptScore: serverData.promptScore ?? finalScore,
+        certificateId: certId,
+        feedback: serverData.feedback || (passed ? "Exemplary technical performance!" : "Score below passing threshold."),
+      };
 
-    // Weighted Overall Score (50% quiz + 50% practical)
-    const finalScore = Math.round(quizScorePercent * 0.5 + practicalScore * 0.5);
-    const passed = finalScore >= test.passingScore;
+      setTestResultData(result);
 
-    const certId = `CERT-${test.id.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      // Only record passed certificate in Skill Passport when server confirms passing status
+      if (passed) {
+        recordTestPassedInPassport(
+          creator.id,
+          test.associatedSkill,
+          {
+            testId: test.id,
+            testName: test.title,
+            score: finalScore,
+            maxScore: 100,
+            passed: true,
+            takenAt: new Date().toISOString().split("T")[0],
+            certificateId: certId,
+            benchmarkAccuracy: `${finalScore}% Parameter Precision`,
+          },
+          finalScore
+        );
+      }
 
-    const result = {
-      score: finalScore,
-      passed,
-      quizScore: quizScorePercent,
-      promptScore: practicalScore,
-      certificateId: certId,
-      feedback: passed
-        ? `Exemplary technical performance! Demonstrated high parameter precision and prompt syntax consistency matching top 5% industry benchmarks.`
-        : `Assessment score ${finalScore}% is below passing threshold of ${test.passingScore}%. Review diffusion noise parameters and retake to earn certification.`,
-    };
+      // Save test submission record to local cache
+      saveTestSubmission({
+        id: serverData.id || `sub-${Date.now()}`,
+        testId: test.id,
+        creatorId: creator.id,
+        score: finalScore,
+        passed,
+        submittedAt: new Date().toISOString(),
+        quizScore: serverData.quizScore ?? finalScore,
+        promptScore: serverData.promptScore ?? finalScore,
+        feedback: result.feedback,
+        certificateId: certId,
+        userPrompt,
+        userParameters,
+        userWorkflowNotes,
+      });
 
-    setTestResultData(result);
-
-    // If passed, record into creator's Skill Passport!
-    if (passed) {
-      recordTestPassedInPassport(
-        creator.id,
-        test.associatedSkill,
-        {
-          testId: test.id,
-          testName: test.title,
-          score: finalScore,
-          maxScore: 100,
-          passed: true,
-          takenAt: new Date().toISOString().split("T")[0],
-          certificateId: certId,
-          benchmarkAccuracy: `${finalScore}% Parameter Precision`,
-        },
-        finalScore
-      );
+      setResultsModalOpen(true);
+    } catch (err: any) {
+      console.error("Test submission error:", err);
+      setSubmissionError(err?.message || "Failed to submit assessment to server. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Save test submission record
-    saveTestSubmission({
-      id: `sub-${Date.now()}`,
-      testId: test.id,
-      creatorId: creator.id,
-      score: finalScore,
-      passed,
-      submittedAt: new Date().toISOString(),
-      quizScore: quizScorePercent,
-      promptScore: practicalScore,
-      feedback: result.feedback,
-      certificateId: certId,
-      userPrompt,
-      userParameters,
-      userWorkflowNotes,
-    });
-
-    setIsSubmitting(false);
-    setResultsModalOpen(true);
   };
 
   return (
@@ -436,6 +457,13 @@ function TestSubmissionInner() {
                 Auto-grading engine calculates parameter precision upon submission.
               </span>
             </div>
+
+            {submissionError && (
+              <div className="w-full p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>{submissionError}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <Link href="/creator/tests">

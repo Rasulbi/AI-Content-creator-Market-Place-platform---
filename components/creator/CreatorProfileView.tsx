@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Creator, PortfolioProject } from "@/lib/creators-data";
-import { CreatorAIAnalysisSection } from "./CreatorAIAnalysisSection";
+import { CreatorAIAnalysisSection, CreatorAIAnalysisState } from "./CreatorAIAnalysisSection";
 import { Logo } from "@/components/ui/Logo";
+import { inviteCreatorAction } from "@/actions/brand-actions";
 import {
   CheckCircle2,
   Users,
@@ -25,10 +26,10 @@ import {
   Award,
   Clock,
   DollarSign,
-  Share2,
   X,
-  FolderKanban,
-  Zap,
+  AlertCircle,
+  Loader2,
+  FileCheck,
 } from "lucide-react";
 
 interface CreatorProfileViewProps {
@@ -40,6 +41,15 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
 
+  // Dynamic AI Profile Analysis state
+  const [analysisState, setAnalysisState] = useState<CreatorAIAnalysisState>({
+    loading: Boolean(creator.skills?.length && creator.portfolio?.length),
+    analysis: null,
+    error: null,
+    isIncomplete: !Boolean(creator.skills?.length && creator.portfolio?.length),
+    isFallback: false,
+  });
+
   // Invitation form state
   const [campaignTitle, setCampaignTitle] = useState(
     `Campaign Collab with ${creator.name}`
@@ -47,16 +57,96 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
   const [deliverables, setDeliverables] = useState("2 Instagram Reels + 1 Product Review");
   const [offeredBudget, setOfferedBudget] = useState(creator.priceRange.split("-")[0].trim() || "₹ 25,000");
   const [timeline, setTimeline] = useState("2 Weeks");
-  const [inviteSent, setInviteSent] = useState(false);
+  const [availableCampaigns, setAvailableCampaigns] = useState<any[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("auto");
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
-  const handleSendInvitation = (e: React.FormEvent) => {
+  // Load existing brand campaigns when modal opens
+  useEffect(() => {
+    if (!inviteModalOpen) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        setInviteError(null);
+        setInviteSuccess(null);
+      }
+    });
+
+    fetch("/api/v1/campaigns?status=all")
+      .then((res) => res.json())
+      .then((json) => {
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          setAvailableCampaigns(json.data);
+          setSelectedCampaignId(json.data[0].id);
+        } else {
+          setAvailableCampaigns([]);
+          setSelectedCampaignId("auto");
+        }
+      })
+      .catch((err) => console.warn("Notice: could not load campaigns for invitation:", err));
+  }, [inviteModalOpen]);
+
+  const handleSendInvitation = async (e: React.FormEvent) => {
     e.preventDefault();
-    setInviteSent(true);
-    setTimeout(() => {
-      setInviteSent(false);
-      setInviteModalOpen(false);
-      alert(`Invitation sent successfully to ${creator.name}! Escrow contract prepared.`);
-    }, 700);
+    setInviteError(null);
+    setInviteSuccess(null);
+    setIsSendingInvite(true);
+
+    try {
+      let targetCampaignId = selectedCampaignId;
+
+      // If brand selects auto-creation or has no existing campaigns, create a dedicated campaign row
+      if (targetCampaignId === "auto" || !targetCampaignId) {
+        const rawBudgetString = offeredBudget.replace(/[^0-9]/g, "");
+        const parsedBudget = Number(rawBudgetString) || 25000;
+
+        const campRes = await fetch("/api/v1/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: campaignTitle.trim().length >= 5 ? campaignTitle.trim() : `Collab Campaign: ${creator.name}`,
+            description: `Deliverables: ${deliverables}. Expected timeline: ${timeline}. Targeted collaboration with ${creator.name}.`,
+            category: creator.category || "General AI",
+            required_skills: [],
+            content_formats: ["Instagram Reels", "UGC Video"],
+            budget_min: parsedBudget,
+            budget_max: Math.round(parsedBudget * 1.3),
+            status: "active",
+          }),
+        });
+
+        const campJson = await campRes.json();
+        if (!campRes.ok || !campJson.data?.id) {
+          throw new Error(campJson.error || "Failed to initialize collaboration campaign. Please ensure you are logged in as a brand.");
+        }
+        targetCampaignId = campJson.data.id;
+      }
+
+      // Invoke authorized Server Action
+      const result = await inviteCreatorAction({
+        campaign_id: targetCampaignId,
+        creator_profile_id: creator.id,
+        proposal_notes: `Deliverables: ${deliverables}. Offered Budget: ${offeredBudget}. Timeline: ${timeline}.`,
+      });
+
+      if (!result.success) {
+        setInviteError(result.error || "Failed to dispatch invitation.");
+        return;
+      }
+
+      setInviteSuccess(`Collaboration invitation successfully sent to ${creator.name}! They will review your proposal in their dashboard.`);
+      setTimeout(() => {
+        setInviteModalOpen(false);
+        setInviteSuccess(null);
+      }, 2500);
+    } catch (err: any) {
+      console.error("Invite creator error:", err);
+      setInviteError(err?.message || "An unexpected error occurred while sending invitation.");
+    } finally {
+      setIsSendingInvite(false);
+    }
   };
 
   return (
@@ -92,7 +182,7 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
           <button
             type="button"
             onClick={() => setInviteModalOpen(true)}
-            className="py-2 px-4 rounded-xl text-xs font-bold text-white bg-[#6355F6] hover:bg-[#5244e6] active:bg-[#4335d5] shadow-md shadow-indigo-600/20 transition cursor-pointer flex items-center gap-1.5"
+            className="py-2 px-4 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 shadow-md shadow-indigo-600/25 hover:shadow-indigo-600/35 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Contact / Invite</span>
@@ -102,16 +192,60 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
+        {/* Synthetic Demo Profile Notice Banner */}
+        {(creator.isDemo || creator.isSynthetic) && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/90 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-extrabold text-[10px] uppercase tracking-wider">
+                Demo Profile
+              </span>
+              <span className="font-semibold">
+                Simulated showcase profile designed for platform demonstration. Portfolio metrics and client reviews are synthetic demonstration fixtures.
+              </span>
+            </div>
+            <span className="text-[10px] text-amber-700 font-bold hidden sm:inline shrink-0">
+              🧪 Demonstration Sandbox
+            </span>
+          </div>
+        )}
+
         {/* Profile Hero Header Card */}
         <div className="relative bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-sm">
           {/* Header Gradient Banner */}
           <div className="h-40 sm:h-52 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.25),transparent_50%)]" />
             <div className="absolute top-4 right-4 flex gap-2">
-              <span className="bg-white/20 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/20 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" />
-                {creator.baseMatchScore}% AI Match Engine
-              </span>
+              {analysisState.loading ? (
+                <span className="bg-white/20 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/20 flex items-center gap-1.5 animate-pulse">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Running AI Profile Audit...
+                </span>
+              ) : analysisState.analysis ? (
+                !analysisState.analysis.isFallback && analysisState.analysis.engine === "ai_model" ? (
+                  <span className="bg-emerald-500/30 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-300/40 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+                    {analysisState.analysis.overallReadinessScore}% AI Audit ({analysisState.analysis.provider || "AI Model"})
+                  </span>
+                ) : (
+                  <span
+                    className="bg-amber-500/30 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300/40 flex items-center gap-1.5"
+                    title={analysisState.analysis.fallbackReason || "Evaluated via rule-based audit engine"}
+                  >
+                    <FileCheck className="w-3.5 h-3.5 text-amber-200" />
+                    {analysisState.analysis.overallReadinessScore}% Rule-Based Audit
+                  </span>
+                )
+              ) : analysisState.error ? (
+                <span className="bg-rose-500/30 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-rose-300/40 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-200" />
+                  Audit Pending Evidence
+                </span>
+              ) : (
+                <span className="bg-white/20 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full border border-white/20 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Profile Ready for AI Audit
+                </span>
+              )}
             </div>
           </div>
 
@@ -143,10 +277,39 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
                     <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                       {creator.name}
                     </h1>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                      Verified Creator
-                    </span>
+
+                    {/* Real Registered vs Demo Profile Indicator */}
+                    {creator.isDemo || creator.isSynthetic ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-amber-100/90 px-2.5 py-1 rounded-full border border-amber-300">
+                        🧪 Demo Profile
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                        Registered Creator
+                      </span>
+                    )}
+
+                    {/* AI Audit Status Indicator */}
+                    {analysisState.analysis && !analysisState.analysis.isFallback && analysisState.analysis.engine === "ai_model" ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        AI-Analyzed Profile
+                      </span>
+                    ) : analysisState.analysis ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200"
+                        title={analysisState.analysis.fallbackReason}
+                      >
+                        <FileCheck className="w-3.5 h-3.5 text-amber-600" />
+                        Rule-Based Audit
+                      </span>
+                    ) : analysisState.loading ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200 animate-pulse">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        Auditing...
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-sm font-semibold text-slate-500 mt-1">
                     {creator.professionalTitle}
@@ -494,7 +657,11 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
             </div>
 
             {/* AI Profile Audit & Verification Section */}
-            <CreatorAIAnalysisSection creator={creator} />
+            <CreatorAIAnalysisSection
+              creator={creator}
+              autoRun={true}
+              onAnalysisStateChange={setAnalysisState}
+            />
 
             {/* Client Reviews Section */}
             <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-sm">
@@ -573,18 +740,54 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
             </div>
 
             <form onSubmit={handleSendInvitation} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Campaign Title
-                </label>
-                <input
-                  type="text"
-                  value={campaignTitle}
-                  onChange={(e) => setCampaignTitle(e.target.value)}
-                  required
-                  className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
+              {inviteError && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span>{inviteError}</span>
+                </div>
+              )}
+
+              {inviteSuccess && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{inviteSuccess}</span>
+                </div>
+              )}
+
+              {availableCampaigns.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Select Campaign
+                  </label>
+                  <select
+                    value={selectedCampaignId}
+                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {availableCampaigns.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title} ({c.category})
+                      </option>
+                    ))}
+                    <option value="auto">+ Create new campaign for this creator</option>
+                  </select>
+                </div>
+              )}
+
+              {(selectedCampaignId === "auto" || availableCampaigns.length === 0) && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Campaign Title
+                  </label>
+                  <input
+                    type="text"
+                    value={campaignTitle}
+                    onChange={(e) => setCampaignTitle(e.target.value)}
+                    required
+                    className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -627,10 +830,10 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
                 </div>
               </div>
 
-              <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 text-[11px] text-purple-700 flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 text-[11px] text-indigo-700 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-600" />
                 <span>
-                  Payments are held securely in Escrow until you review and approve creator deliverables.
+                  Official collaboration proposals are delivered directly to the creator&apos;s dashboard. You can review deliverables once accepted.
                 </span>
               </div>
 
@@ -645,11 +848,20 @@ export function CreatorProfileView({ creator }: CreatorProfileViewProps) {
 
                 <button
                   type="submit"
-                  disabled={inviteSent}
-                  className="flex-1 py-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-1.5"
+                  disabled={isSendingInvite}
+                  className="flex-1 py-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{inviteSent ? "Sending..." : "Send Invitation"}</span>
+                  {isSendingInvite ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending Invitation...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send Invitation</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

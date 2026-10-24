@@ -42,16 +42,24 @@ function SignupFormContent() {
         setSuccessMessage(null);
 
         // Client-side validations
-        if (!fullName.trim()) {
-            setErrorMessage("Please enter your full name.");
+        const trimmedFullName = fullName.trim();
+        const trimmedEmail = email.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (trimmedFullName.length < 2) {
+            setErrorMessage("Full name must be at least 2 characters.");
             return;
         }
-        if (!email.trim() || !email.includes("@")) {
-            setErrorMessage("Please enter a valid email address.");
+        if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+            setErrorMessage("Please provide a valid email address.");
             return;
         }
         if (!password || password.length < 6) {
             setErrorMessage("Password must be at least 6 characters long.");
+            return;
+        }
+        if (password.length > 100) {
+            setErrorMessage("Password cannot exceed 100 characters.");
             return;
         }
         if (isBrand && !companyName.trim()) {
@@ -74,6 +82,9 @@ function SignupFormContent() {
                 setErrorMessage(error || "Registration failed. Please try again.");
                 return;
             }
+
+            // Clear sensitive password from client state immediately
+            setPassword("");
 
             setSuccessMessage("Account created successfully! Redirecting to your dashboard...");
             setTimeout(() => {
@@ -177,6 +188,7 @@ function SignupFormContent() {
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder={isBrand ? "Aarav Mehta" : "Ananya Rao"}
                                 required
+                                minLength={2}
                                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                             />
                         </div>
@@ -251,11 +263,13 @@ function SignupFormContent() {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Choose a password (min 6 characters)"
+                                placeholder="Choose a password (6–100 characters)"
+                                autoComplete="new-password"
                                 required
-                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20">
-
-                            </input>
+                                minLength={6}
+                                maxLength={100}
+                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                            />
                         </div>
                     </div>
 

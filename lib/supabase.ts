@@ -48,7 +48,7 @@ export async function checkSupabaseStatus(): Promise<{
   }
 
   try {
-    const { error } = await supabase.from("creators").select("id").limit(1);
+    const { error } = await supabase.from("skills").select("id").limit(1);
     if (error && error.code !== "PGRST116") {
       return {
         connected: false,

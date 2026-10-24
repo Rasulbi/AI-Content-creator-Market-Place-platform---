@@ -58,6 +58,7 @@ export interface Creator {
   baseMatchScore: number;
   youtubeSubscribers?: string;
   isDemo?: boolean;
+  isSynthetic?: boolean;
 }
 
 export const CREATORS_DATA: Creator[] = [

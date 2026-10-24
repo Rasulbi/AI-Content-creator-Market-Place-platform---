@@ -1,10 +1,10 @@
 /**
  * Model Provider Abstraction Interface
  * Decouples the marketplace business logic from specific LLM vendors.
- * Supports OpenRouter API (primary) and xAI Grok API (alternative).
+ * Supports Google Gemini API (primary), OpenRouter API, and xAI Grok / Groq API (alternatives).
  */
 
-export type AIProviderId = "openrouter" | "grok";
+export type AIProviderId = "gemini" | "openrouter" | "grok" | "openai";
 
 export interface AIModelProvider {
   readonly id: AIProviderId;

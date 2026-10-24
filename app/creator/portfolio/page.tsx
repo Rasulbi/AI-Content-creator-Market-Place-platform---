@@ -30,6 +30,9 @@ import {
   ExternalLink,
   Layers,
   ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 
 export default function PortfolioPage() {
@@ -41,6 +44,11 @@ export default function PortfolioPage() {
   const [inspectProject, setInspectProject] = useState<PortfolioProject | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
+  const [dbProjects, setDbProjects] = useState<PortfolioProject[] | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   useEffect(() => {
     const user = getCurrentUser();
     const stored = getStoredCreators();
@@ -49,10 +57,28 @@ export default function PortfolioPage() {
       setCreator(matched);
     }
 
+    // Load persisted portfolio projects from Supabase database
+    async function fetchDbPortfolio() {
+      try {
+        const queryParam = user?.id ? `?creatorId=${encodeURIComponent(user.id)}` : "";
+        const res = await fetch(`/api/v1/portfolio${queryParam}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.data) && json.data.length > 0) {
+            setDbProjects(json.data);
+          }
+        }
+      } catch (err) {
+        console.warn("Portfolio DB fetch error:", err);
+      }
+    }
+    fetchDbPortfolio();
+
     const handleUpdate = () => {
       const refreshed = getStoredCreators();
       const current = user ? getCreatorById(user.id) || refreshed[0] : refreshed[0];
       if (current) setCreator(current);
+      fetchDbPortfolio();
     };
 
     window.addEventListener("creators-store-updated", handleUpdate);
@@ -65,13 +91,72 @@ export default function PortfolioPage() {
     setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    if (confirm("Are you sure you want to remove this project from your portfolio?")) {
+  const handleDeleteProject = async (projectId: string) => {
+    if (deletingId) return;
+    if (!confirm("Are you sure you want to remove this project from your portfolio?")) {
+      return;
+    }
+
+    setDeletingId(projectId);
+    setDeleteError(null);
+    setDeleteNotice(null);
+
+    try {
+      const res = await fetch(`/api/v1/portfolio/${encodeURIComponent(projectId)}`, {
+        method: "DELETE",
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        let msg = json.error || `Server rejected project deletion (HTTP ${res.status}).`;
+        if (res.status === 401) {
+          msg = "Authentication required. Please log in to delete this project.";
+        } else if (res.status === 403) {
+          msg = "You are not authorized to delete this project.";
+        } else if (res.status === 404) {
+          msg = "Project not found or already removed from the server.";
+        }
+        setDeleteError(msg);
+        return;
+      }
+
+      // 1. Delete from local cache
       removeCreatorPortfolio(creator.id, projectId);
+
+      // 2. Delete from database state
+      if (dbProjects) {
+        setDbProjects((prev) => (prev ? prev.filter((p) => p.id !== projectId) : null));
+      }
+
+      // 3. Update active creator portfolio state
+      setCreator((prev) =>
+        prev
+          ? {
+              ...prev,
+              portfolio: (prev.portfolio || []).filter((p) => p.id !== projectId),
+            }
+          : prev
+      );
+
+      setDeleteNotice("Project successfully deleted from your portfolio.");
+      setTimeout(() => setDeleteNotice(null), 4000);
+    } catch (e: any) {
+      setDeleteError(e?.message || "Network error while deleting project. Please check your connection and retry.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  const projects = creator.portfolio || [];
+  // Merge database projects with local store items (avoiding duplicates by id or title)
+  const projects = React.useMemo(() => {
+    const local = creator.portfolio || [];
+    if (!dbProjects || dbProjects.length === 0) return local;
+
+    const dbMap = new Map(dbProjects.map((p) => [p.id, p]));
+    const localRemaining = local.filter((l) => !dbMap.has(l.id));
+    return [...dbProjects, ...localRemaining];
+  }, [creator.portfolio, dbProjects]);
 
   const filteredProjects = projects.filter((p) => {
     const matchesCategory =
@@ -114,6 +199,45 @@ export default function PortfolioPage() {
           </Link>
         </div>
 
+        {/* Delete Status / Error Alerts */}
+        {deleteNotice && (
+          <div
+            role="status"
+            className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm flex items-center justify-between animate-fadeIn"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{deleteNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeleteNotice(null)}
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {deleteError && (
+          <div
+            role="alert"
+            className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm flex items-center justify-between animate-fadeIn"
+          >
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeleteError(null)}
+              className="text-xs font-bold text-rose-700 hover:text-rose-900 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Filter and Search Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0 scrollbar-none">
@@ -121,10 +245,10 @@ export default function PortfolioPage() {
               <button
                 key={filter}
                 onClick={() => setContentTypeFilter(filter)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   contentTypeFilter === filter
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                    ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`}
               >
                 {filter}
@@ -139,7 +263,7 @@ export default function PortfolioPage() {
               placeholder="Search by title, tool, or prompt..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-500"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium text-slate-800"
             />
           </div>
         </div>
@@ -178,10 +302,15 @@ export default function PortfolioPage() {
                   <button
                     type="button"
                     onClick={() => handleDeleteProject(project.id)}
-                    className="p-1.5 rounded-lg bg-black/40 text-white/80 hover:text-rose-400 hover:bg-black/70 transition"
-                    title="Delete project"
+                    disabled={deletingId !== null}
+                    className="p-1.5 rounded-lg bg-black/40 text-white/80 hover:text-rose-400 hover:bg-black/70 disabled:opacity-50 transition cursor-pointer"
+                    title={deletingId === project.id ? "Deleting project..." : "Delete project"}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {deletingId === project.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                   </button>
                 </div>
 

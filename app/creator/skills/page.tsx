@@ -35,6 +35,8 @@ import {
   Layers,
   ArrowRight,
   Search,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 export default function SkillsManagementPage() {
@@ -48,6 +50,9 @@ export default function SkillsManagementPage() {
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillCategory, setNewSkillCategory] = useState("AI Creative Discipline");
   const [newSkillTools, setNewSkillTools] = useState("");
+  const [isSavingSkill, setIsSavingSkill] = useState(false);
+  const [addSkillError, setAddSkillError] = useState<string | null>(null);
+  const [skillSuccessNotice, setSkillSuccessNotice] = useState<string | null>(null);
 
   // Inspect Evidence modal state
   const [selectedSkill, setSelectedSkill] = useState<SkillPassportItem | null>(null);
@@ -61,6 +66,48 @@ export default function SkillsManagementPage() {
       setPassportItems(getStoredSkillPassport(matched.id));
     }
 
+    // Fetch persisted creator skills from Supabase
+    async function fetchDbSkills() {
+      try {
+        const queryParam = user?.id ? `?creatorId=${encodeURIComponent(user.id)}` : "";
+        const res = await fetch(`/api/v1/skills${queryParam}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.creatorSkills) && json.creatorSkills.length > 0) {
+            // Map DB creator skills into SkillPassportItem format
+            const mappedDbSkills: SkillPassportItem[] = json.creatorSkills.map((cs: any) => ({
+              id: cs.id,
+              creatorId: matched?.id || "ananya-rao",
+              skillName: cs.skills?.name || "AI Skill",
+              category: cs.skills?.category || "AI Creative Discipline",
+              status: cs.verification_status === "client_verified"
+                ? "Client Verified"
+                : cs.verification_status === "test_verified"
+                ? "Test Verified"
+                : cs.verification_status === "portfolio_evidence"
+                ? "Portfolio Evidence"
+                : "Claimed",
+              score: Number(cs.score) || 75,
+              associatedTools: [],
+              evidenceText: cs.evidence_text || undefined,
+              evidenceUrl: cs.evidence_url || undefined,
+              verifiedAt: cs.verified_at || undefined,
+            }));
+
+            // Merge with local passport items
+            setPassportItems((prev) => {
+              const names = new Set(mappedDbSkills.map((m) => m.skillName.toLowerCase()));
+              const unmappedLocal = prev.filter((p) => !names.has(p.skillName.toLowerCase()));
+              return [...mappedDbSkills, ...unmappedLocal];
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Skills DB sync notice:", err);
+      }
+    }
+    fetchDbSkills();
+
     const handleUpdate = () => {
       const refreshed = getStoredCreators();
       const current = user ? getCreatorById(user.id) || refreshed[0] : refreshed[0];
@@ -68,6 +115,7 @@ export default function SkillsManagementPage() {
         setCreator(current);
         setPassportItems(getStoredSkillPassport(current.id));
       }
+      fetchDbSkills();
     };
 
     window.addEventListener("skill-passport-updated", handleUpdate);
@@ -78,21 +126,79 @@ export default function SkillsManagementPage() {
     };
   }, []);
 
-  const handleAddNewSkill = (e: React.FormEvent) => {
+  const handleAddNewSkill = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSkillName.trim()) return;
+    if (isSavingSkill) return;
+
+    const trimmedName = newSkillName.trim();
+    if (!trimmedName || trimmedName.length < 2) {
+      setAddSkillError("Skill name must be at least 2 characters.");
+      return;
+    }
+
+    setAddSkillError(null);
+    setIsSavingSkill(true);
 
     const tools = newSkillTools
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    addSkillToPassport(creator.id, newSkillName.trim(), newSkillCategory, tools);
-    addCreatorSkill(creator.id, newSkillName.trim());
+    try {
+      // 1. Authoritative persistence via API route
+      const res = await fetch("/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill_name: trimmedName,
+          category: newSkillCategory,
+          status: "claimed",
+        }),
+      });
 
-    setNewSkillName("");
-    setNewSkillTools("");
-    setIsAddModalOpen(false);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        let errorMsg = json.error || `Server rejected skill registration (HTTP ${res.status}).`;
+        if (res.status === 401) {
+          errorMsg = "Authentication required. Please log in to add skills to your passport.";
+        }
+        setAddSkillError(errorMsg);
+        return;
+      }
+
+      // 2. Only commit to local passport and creator store once server confirms success
+      const addedItem = addSkillToPassport(creator.id, trimmedName, newSkillCategory, tools);
+      addCreatorSkill(creator.id, trimmedName);
+
+      // 3. Update active passportItems state
+      const serverSkill = json.data;
+      const newPassportItem: SkillPassportItem = {
+        ...addedItem,
+        id: serverSkill?.id || addedItem.id,
+        skillName: serverSkill?.skills?.name || addedItem.skillName,
+        category: serverSkill?.skills?.category || addedItem.category,
+        score: Number(serverSkill?.score) || addedItem.score,
+      };
+
+      setPassportItems((prev) => [
+        newPassportItem,
+        ...prev.filter((p) => p.skillName.toLowerCase() !== trimmedName.toLowerCase()),
+      ]);
+
+      // 4. Reset form inputs and close modal
+      setNewSkillName("");
+      setNewSkillTools("");
+      setAddSkillError(null);
+      setIsAddModalOpen(false);
+
+      setSkillSuccessNotice(`Skill "${trimmedName}" successfully added and saved to your passport.`);
+      setTimeout(() => setSkillSuccessNotice(null), 4000);
+    } catch (e: any) {
+      setAddSkillError(e?.message || "Network error while saving skill. Please check your connection and retry.");
+    } finally {
+      setIsSavingSkill(false);
+    }
   };
 
   const passportSummary = calculatePassportSummary(passportItems);
@@ -146,6 +252,26 @@ export default function SkillsManagementPage() {
             </Button>
           </div>
         </div>
+
+        {/* Skill Creation Success Notice */}
+        {skillSuccessNotice && (
+          <div
+            role="status"
+            className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm flex items-center justify-between animate-fadeIn"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{skillSuccessNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSkillSuccessNotice(null)}
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Verification Summary Banner */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
@@ -221,10 +347,10 @@ export default function SkillsManagementPage() {
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     statusFilter === status
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs"
+                      : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
                   {status}
@@ -240,7 +366,7 @@ export default function SkillsManagementPage() {
               placeholder="Search skills..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-500"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium text-slate-800"
             />
           </div>
         </div>
@@ -374,12 +500,27 @@ export default function SkillsManagementPage() {
       {/* Add New Skill Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          if (!isSavingSkill) {
+            setIsAddModalOpen(false);
+            setAddSkillError(null);
+          }
+        }}
         title="Claim a New Skill"
         description="Add a competency to your creator portfolio. You can later upgrade it to Portfolio Evidence or Test Verified."
         maxWidth="md"
       >
         <form onSubmit={handleAddNewSkill} className="space-y-4">
+          {addSkillError && (
+            <div
+              role="alert"
+              className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{addSkillError}</span>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-bold text-slate-700 block mb-1">
               Skill Name *
@@ -387,10 +528,11 @@ export default function SkillsManagementPage() {
             <input
               type="text"
               required
+              disabled={isSavingSkill}
               value={newSkillName}
               onChange={(e) => setNewSkillName(e.target.value)}
               placeholder="e.g. Temporal Video Consistency, Lip Sync, Flux LoRA Tuning"
-              className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-blue-500"
+              className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-blue-500 disabled:bg-slate-100"
             />
           </div>
 
@@ -400,8 +542,9 @@ export default function SkillsManagementPage() {
             </label>
             <select
               value={newSkillCategory}
+              disabled={isSavingSkill}
               onChange={(e) => setNewSkillCategory(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 bg-white focus:outline-blue-500"
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 bg-white focus:outline-blue-500 disabled:bg-slate-100"
             >
               <option value="Generative Imagery">Generative Imagery</option>
               <option value="AI Video Production">AI Video Production</option>
@@ -418,10 +561,11 @@ export default function SkillsManagementPage() {
             </label>
             <input
               type="text"
+              disabled={isSavingSkill}
               value={newSkillTools}
               onChange={(e) => setNewSkillTools(e.target.value)}
               placeholder="e.g. Midjourney v6, Runway Gen-3, ElevenLabs"
-              className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-blue-500"
+              className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-blue-500 disabled:bg-slate-100"
             />
           </div>
 
@@ -435,12 +579,23 @@ export default function SkillsManagementPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsAddModalOpen(false)}
+              disabled={isSavingSkill}
+              onClick={() => {
+                setIsAddModalOpen(false);
+                setAddSkillError(null);
+              }}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="gradient" size="sm">
-              Save Skill
+            <Button type="submit" variant="gradient" size="sm" disabled={isSavingSkill} className="gap-1.5">
+              {isSavingSkill ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>Save Skill</span>
+              )}
             </Button>
           </div>
         </form>

@@ -174,7 +174,7 @@ npx tsx scripts/test-rate-limit.ts
 | **Brand Login** | `http://localhost:3000/login/brand` | Brand login portal (Click Login to enter dashboard) |
 | **Creator Login** | `http://localhost:3000/login/influencer` | Influencer login portal (Click Login to enter portal) |
 | **Brand Dashboard** | `http://localhost:3000/brand/dashboard` | AI Matching with 1-Click presets & creator cards |
-| **Creator Dashboard** | `http://localhost:3000/creator/dashboard` | Creator earnings, verification test scores & invitations |
+| **Creator Dashboard** | `http://localhost:3000/creator/dashboard` | Creator skill passport, verification test scores & invitations |
 | **AI Assistant Workspace** | `http://localhost:3000/assistant` | Full-page production AI creative & marketing workspace |
 | **Creator Profile** | `http://localhost:3000/creators/ananya-rao` | Detailed profile with portfolio gallery & invite modal |
 

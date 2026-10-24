@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getCurrentCreatorProfile } from "@/lib/supabase/auth-helpers";
 import { updatePortfolioProjectSchema } from "@/lib/validations";
 
@@ -9,6 +9,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
     const { profile } = await getCurrentCreatorProfile();
     const body = await request.json();
     const validated = updatePortfolioProjectSchema.parse({ ...body, id });
@@ -50,20 +54,32 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
     const { profile } = await getCurrentCreatorProfile();
     const supabase = await createClient();
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("portfolio_projects")
       .delete()
       .eq("id", id)
-      .eq("creator_profile_id", profile.id);
+      .eq("creator_profile_id", profile.id)
+      .select("id");
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, message: "Project deleted" });
+    if (!data || data.length === 0) {
+      return NextResponse.json(
+        { error: "Portfolio project not found or you do not have permission to delete it" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: "Project deleted", id });
   } catch (err: any) {
     const status = err.name === "AuthError" ? err.statusCode : 400;
     return NextResponse.json({ error: err?.message || "Delete failed" }, { status });

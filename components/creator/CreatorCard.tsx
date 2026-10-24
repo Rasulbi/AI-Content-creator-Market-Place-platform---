@@ -20,6 +20,7 @@ import {
   ChevronUp,
   ArrowRight,
   ShieldCheck,
+  FileCheck,
 } from "lucide-react";
 
 interface CreatorCardProps {
@@ -84,12 +85,16 @@ export function CreatorCard({
               <h3 className="text-base sm:text-lg font-bold text-slate-900 truncate">
                 {creator.name}
               </h3>
-              {creator.isVerified && (
+              {creator.isDemo || creator.isSynthetic ? (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
+                  🧪 Demo Profile
+                </span>
+              ) : creator.isVerified ? (
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                   <CheckCircle2 className="w-3 h-3 text-blue-600" />
                   Verified
                 </span>
-              )}
+              ) : null}
             </div>
 
             <p className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
@@ -139,8 +144,8 @@ export function CreatorCard({
                 matchScore
               )}`}
             >
-              <Sparkles className="w-3 h-3" />
-              {matchScore}% Match
+              <FileCheck className="w-3 h-3 text-indigo-500" />
+              {matchScore}% Match (Rule-Based)
             </span>
           </div>
 
@@ -237,7 +242,7 @@ export function CreatorCard({
           {showFullBreakdown && (
             <div className="mt-3 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-2 animate-fadeIn">
               <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                AI Match Score Breakdown (Weighted Model)
+                Rule-Based Match Score Breakdown (Weighted Model)
               </div>
               {[
                 { label: "Skill Match (40%)", score: match.breakdown.skillMatch, color: "bg-indigo-600" },

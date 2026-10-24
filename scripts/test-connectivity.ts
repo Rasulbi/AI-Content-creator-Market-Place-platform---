@@ -17,6 +17,7 @@ const PLACEHOLDER_PATTERNS = [
   /your-service-role-key/i,
   /your-db-password/i,
   /your-key-here/i,
+  /your-gemini-key/i,
   /your-openrouter-key/i,
   /your-openai-key/i,
   /your-groq-key/i,
@@ -36,8 +37,12 @@ function isConfiguredAndNotPlaceholder(val: string | undefined): boolean {
 }
 
 export async function testSupabaseConnectivity(): Promise<ServiceConnectivityResult> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+$/, "");
+  let anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const prefix = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.";
+  while (anonKey && anonKey.startsWith(prefix + prefix)) {
+    anonKey = anonKey.slice(prefix.length);
+  }
 
   if (!isConfiguredAndNotPlaceholder(url) || !isConfiguredAndNotPlaceholder(anonKey)) {
     return {
@@ -50,7 +55,7 @@ export async function testSupabaseConnectivity(): Promise<ServiceConnectivityRes
 
   const startTime = Date.now();
   try {
-    const res = await fetch(`${url}/rest/v1/`, {
+    const res = await fetch(`${url}/rest/v1/skills?select=id&limit=1`, {
       method: "GET",
       headers: {
         apikey: anonKey!,
@@ -92,6 +97,73 @@ export async function testSupabaseConnectivity(): Promise<ServiceConnectivityRes
       responseTimeMs: duration,
       message: `Network connection failed: ${err.message}`,
       remediation: "Ensure the NEXT_PUBLIC_SUPABASE_URL domain is correct and reachable.",
+    };
+  }
+}
+
+export async function testGeminiConnectivity(): Promise<ServiceConnectivityResult> {
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
+
+  if (!isConfiguredAndNotPlaceholder(key)) {
+    return {
+      service: "Google Gemini API (Primary LLM)",
+      status: "SKIP",
+      message: "GEMINI_API_KEY is not configured or contains placeholder in .env.local.",
+      remediation: "Generate an API key at https://aistudio.google.com/app/apikey and set GEMINI_API_KEY in .env.local.",
+    };
+  }
+
+  const startTime = Date.now();
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      method: "GET",
+      headers: {
+        "x-goog-api-key": key!,
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    const duration = Date.now() - startTime;
+
+    if (res.ok) {
+      return {
+        service: "Google Gemini API (Primary LLM)",
+        status: "PASS",
+        responseTimeMs: duration,
+        message: "Authentication verified. Google Generative Language models accessible.",
+      };
+    } else if (res.status === 401 || res.status === 403) {
+      return {
+        service: "Google Gemini API (Primary LLM)",
+        status: "FAIL",
+        responseTimeMs: duration,
+        message: "Authentication failed (HTTP 401/403). Invalid or restricted GEMINI_API_KEY.",
+        remediation: "Verify your API key at https://aistudio.google.com/app/apikey.",
+      };
+    } else if (res.status === 429) {
+      return {
+        service: "Google Gemini API (Primary LLM)",
+        status: "FAIL",
+        responseTimeMs: duration,
+        message: "Google Gemini rate limit reached (HTTP 429).",
+        remediation: "Wait a moment or check your Google AI Studio quota.",
+      };
+    } else {
+      return {
+        service: "Google Gemini API (Primary LLM)",
+        status: "FAIL",
+        responseTimeMs: duration,
+        message: `HTTP ${res.status} received from Google Gemini API.`,
+      };
+    }
+  } catch (err: any) {
+    const duration = Date.now() - startTime;
+    return {
+      service: "Google Gemini API (Primary LLM)",
+      status: "FAIL",
+      responseTimeMs: duration,
+      message: `Network request error: ${err.message}`,
+      remediation: "Check internet connection and verify generativelanguage.googleapis.com is reachable.",
     };
   }
 }
@@ -297,6 +369,60 @@ export async function testDatabaseConnectivity(): Promise<ServiceConnectivityRes
   }
 }
 
+export async function testGeminiGeneration(): Promise<ServiceConnectivityResult> {
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
+  if (!isConfiguredAndNotPlaceholder(key)) {
+    return {
+      service: "Google Gemini Generation (Live Inference)",
+      status: "SKIP",
+      message: "GEMINI_API_KEY is not configured.",
+      remediation: "Add GEMINI_API_KEY to .env.local.",
+    };
+  }
+
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-1.5-flash";
+  const startTime = Date.now();
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": key!,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: "Respond in 5 words: Confirm system online." }] }],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const duration = Date.now() - startTime;
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "OK";
+      return {
+        service: "Google Gemini Generation (Live Inference)",
+        status: "PASS",
+        responseTimeMs: duration,
+        message: `Live generation succeeded with model "${model}": "${text.substring(0, 60)}"`,
+      };
+    } else {
+      return {
+        service: "Google Gemini Generation (Live Inference)",
+        status: "FAIL",
+        responseTimeMs: duration,
+        message: `HTTP ${res.status} error from Google Gemini generation.`,
+      };
+    }
+  } catch (err: any) {
+    return {
+      service: "Google Gemini Generation (Live Inference)",
+      status: "FAIL",
+      responseTimeMs: Date.now() - startTime,
+      message: `Inference failed: ${err.message}`,
+    };
+  }
+}
+
 export async function testOpenRouterGeneration(): Promise<ServiceConnectivityResult> {
   const key = process.env.OPENROUTER_API_KEY?.trim();
   if (!isConfiguredAndNotPlaceholder(key)) {
@@ -308,7 +434,8 @@ export async function testOpenRouterGeneration(): Promise<ServiceConnectivityRes
     };
   }
 
-  const model = process.env.AI_MODEL || "openai/gpt-4o-mini";
+  const rawModel = process.env.OPENROUTER_MODEL?.trim() || process.env.AI_MODEL?.trim() || "openai/gpt-4o-mini";
+  const model = rawModel.startsWith("gemini-") ? "google/gemini-flash-1.5" : rawModel;
   const startTime = Date.now();
 
   try {
@@ -639,11 +766,13 @@ export async function runAllConnectivityChecks(): Promise<{
   const authProbes: ServiceConnectivityResult[] = [];
   authProbes.push(await testSupabaseConnectivity());
   authProbes.push(await testDatabaseConnectivity());
+  authProbes.push(await testGeminiConnectivity());
   authProbes.push(await testOpenRouterConnectivity());
   authProbes.push(await testOpenAIConnectivity());
   authProbes.push(await testGroqConnectivity());
 
   const inferenceProbes: ServiceConnectivityResult[] = [];
+  inferenceProbes.push(await testGeminiGeneration());
   inferenceProbes.push(await testOpenRouterGeneration());
   inferenceProbes.push(await testOpenAIGeneration());
   inferenceProbes.push(await testGroqGeneration());

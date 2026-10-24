@@ -33,36 +33,32 @@ export async function getAuthenticatedUser(): Promise<{
     return null;
   }
 
-  // Fetch role and profile details from public.users
+  // Fetch role and profile details from authoritative public.users
   const { data: dbUser, error: dbError } = await supabase
     .from("users")
     .select("*")
     .eq("id", authUser.id)
-    .single();
+    .maybeSingle();
 
-  if (dbError || !dbUser) {
-    // Graceful fallback if trigger has not completed yet
-    const fallbackUser: DbUser = {
-      id: authUser.id,
-      email: authUser.email || "",
-      role: ((authUser.user_metadata?.role as UserRole) || "creator"),
-      full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
-      avatar_url: authUser.user_metadata?.avatar_url || null,
-      company_name: authUser.user_metadata?.company_name || null,
-      created_at: authUser.created_at,
-      updated_at: authUser.updated_at || authUser.created_at,
-    };
+  // FAIL CLOSED: If database user record is missing, query fails, or role is invalid,
+  // do NOT fall back to client-controlled user_metadata.
+  if (dbError || !dbUser || !dbUser.role) {
+    return null;
+  }
 
-    return {
-      authId: authUser.id,
-      email: authUser.email || "",
-      user: fallbackUser,
-    };
+  // Validate allowed role enum values
+  if (!["creator", "brand", "admin"].includes(dbUser.role)) {
+    return null;
+  }
+
+  // If server-managed app_metadata grants admin, reflect admin role
+  if (authUser.app_metadata?.role === "admin") {
+    dbUser.role = "admin";
   }
 
   return {
     authId: authUser.id,
-    email: authUser.email || "",
+    email: authUser.email || dbUser.email,
     user: dbUser,
   };
 }

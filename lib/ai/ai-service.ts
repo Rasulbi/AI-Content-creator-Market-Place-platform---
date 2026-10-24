@@ -20,11 +20,19 @@ import {
   ChatMessage,
   AssistantContext,
 } from "./types";
+import {
+  GenerateCreatorProfileInput,
+  GenerateCreatorProfileInputSchema,
+  GeneratedProfileDraft,
+  GeneratedProfileDraftSchema,
+} from "../validations/ai-profile";
 import { AIModelProvider } from "./provider-interface";
 import { getAIProvider } from "./provider-factory";
 import { calculateWeightedScores, generateMatchExplanation } from "./scoring-engine";
 import { aiLogger } from "./logger";
 import { CREATORS_DATA } from "../creators-data";
+import { buildEnhancedSystemPrompt, generateSmartHeuristicResponse } from "./chatbot-engine";
+import { detectLanguage, getLanguageMetadata, SupportedLanguageCode } from "./multilingual";
 
 export class AIService {
   private explicitProvider?: AIModelProvider;
@@ -438,7 +446,7 @@ Generate structured analysis: strengths (string[]), relevantSkills (string[]), s
       // Fallback Heuristic Creator Analysis
       return this.heuristicCreatorProfileAnalysis(
         validated,
-        !this.provider.isConfigured() ? "AI provider credentials not configured" : undefined
+        !this.provider.isConfigured() ? "AI provider credentials not configured. Using rule-based audit engine." : undefined
       );
     });
   }
@@ -532,9 +540,9 @@ Generate structured analysis: strengths (string[]), relevantSkills (string[]), s
       overallReadinessScore: readiness,
       requiresHumanReview: true,
       engine: "heuristic_fallback",
-      provider: this.provider.name,
+      provider: "Heuristic Audit Engine",
       isFallback: true,
-      fallbackReason: fallbackReason || (!this.provider.isConfigured() ? "AI provider credentials not configured" : "Fallback engaged"),
+      fallbackReason: fallbackReason || (!this.provider.isConfigured() ? "AI provider credentials not configured. Using rule-based audit engine." : "Fallback engaged"),
     };
   }
 
@@ -704,7 +712,7 @@ videoScriptOutline: array of {scene: string, visual: string, audioOrVoiceover: s
         },
       ],
       engine: "heuristic_fallback",
-      provider: this.provider.name,
+      provider: "Heuristic Fallback Engine",
       isFallback: true,
       fallbackReason: fallbackReason || (!this.provider.isConfigured() ? "AI provider credentials not configured" : "Fallback engaged"),
     };
@@ -712,7 +720,7 @@ videoScriptOutline: array of {scene: string, visual: string, audioOrVoiceover: s
 
   /**
    * 7. AI CHATBOT (handleChat / handleChatWithMetadata)
-   * Contextual chatbot assistant for creators and brands with execution provenance.
+   * Contextual chatbot assistant for creators and brands with execution provenance and multilingual support.
    */
   async handleChatWithMetadata(
     messages: ChatMessage[],
@@ -723,28 +731,45 @@ videoScriptOutline: array of {scene: string, visual: string, audioOrVoiceover: s
     provider?: string;
     isFallback: boolean;
     fallbackReason?: string;
+    detectedLanguage?: SupportedLanguageCode;
+    effectiveLanguage?: SupportedLanguageCode;
+    dir?: "ltr" | "rtl";
   }> {
     return aiLogger.time("AIService.handleChatWithMetadata", async () => {
       const role = userContext?.role || "creator";
       const niche = userContext?.niche || "Content Creation";
+      const normalizedRole = role === "brand" ? "brand" : "creator";
+
+      const preferredLanguage = userContext?.preferredLanguage || "auto";
+      const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+      const detection = detectLanguage(lastUserMessage, preferredLanguage);
+      const isExplicit = Boolean(preferredLanguage && preferredLanguage !== "auto");
+      const effectiveLanguage = (isExplicit ? preferredLanguage : detection.detectedLanguage) as SupportedLanguageCode;
+      const langMeta = getLanguageMetadata(effectiveLanguage);
 
       if (this.provider.isConfigured()) {
         try {
-          const systemInstruction = `You are the AI Creator Marketplace Assistant, an expert advisor for content creators and brand clients.
-User Role: ${role === "brand" ? "Brand Marketer / Campaign Manager" : "Content Creator / Influencer"}
-Niche / Focus: ${niche}
+          const systemInstruction = buildEnhancedSystemPrompt({
+            role: normalizedRole,
+            userName: "Marketplace User",
+            userNiche: niche,
+            platform: userContext?.platform || "Instagram",
+            targetAudience: userContext?.targetAudience || "Target Audience",
+            brandOrProduct: userContext?.brandOrProduct,
+            tone: userContext?.tone || "Conversational",
+            goal: userContext?.contentGoal || "Engagement & Growth",
+            preferredLanguage,
+            detectedLanguage: detection.detectedLanguage,
+            isCodeSwitching: detection.isCodeSwitching,
+            dialect: detection.dialect,
+          });
 
-Capabilities:
-1. Suggest viral content ideas, hooks, captions, hashtags, and video script outlines.
-2. Help creators optimize their profiles, portfolios, and pitch messages to brands.
-3. Help brands write compelling campaign briefs and determine target creator skills & budgets.
-4. Answer marketplace questions on verified skills, escrow payments, and AI match scoring.
-
-Keep answers concise, actionable, and formatted in clear markdown.`;
-
+          const languageReminder = effectiveLanguage !== "en" && effectiveLanguage !== "auto"
+            ? `\n\n[MANDATORY SYSTEM DIRECTIVE: The user's active response language is ${langMeta.name} (${langMeta.nativeName}). You MUST generate the entire user-facing response, explanation, hooks, and creative scripts in fluent, natural ${langMeta.name} (${langMeta.nativeName}). DO NOT default to English. Keep product names (e.g. "GlowUp"), URLs, timestamps (e.g. "(0:00 - 0:03)"), and hashtags unchanged.]`
+            : "";
           const conversationPrompt = messages
             .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-            .join("\n\n");
+            .join("\n\n") + languageReminder;
 
           const reply = await this.provider.generateText(conversationPrompt, systemInstruction);
           return {
@@ -752,29 +777,38 @@ Keep answers concise, actionable, and formatted in clear markdown.`;
             engine: "ai_model",
             provider: this.provider.name,
             isFallback: false,
+            detectedLanguage: detection.detectedLanguage,
+            effectiveLanguage,
+            dir: langMeta.dir,
           };
         } catch (err) {
           const fallbackReason = err instanceof Error ? err.message : String(err);
           aiLogger.warn(`${this.provider.name} call failed for chatbot, using heuristic assistant`, { error: err });
-          const reply = this.heuristicChatResponse(messages, role, niche);
+          const reply = this.heuristicChatResponse(messages, role, niche, userContext, effectiveLanguage);
           return {
             reply,
             engine: "heuristic_fallback",
             provider: this.provider.name,
             isFallback: true,
             fallbackReason,
+            detectedLanguage: detection.detectedLanguage,
+            effectiveLanguage,
+            dir: langMeta.dir,
           };
         }
       }
 
       // Fallback Assistant Engine
-      const reply = this.heuristicChatResponse(messages, role, niche);
+      const reply = this.heuristicChatResponse(messages, role, niche, userContext, effectiveLanguage);
       return {
         reply,
         engine: "heuristic_fallback",
         provider: this.provider.name,
         isFallback: true,
         fallbackReason: !this.provider.isConfigured() ? "AI provider credentials not configured" : undefined,
+        detectedLanguage: detection.detectedLanguage,
+        effectiveLanguage,
+        dir: langMeta.dir,
       };
     });
   }
@@ -790,59 +824,164 @@ Keep answers concise, actionable, and formatted in clear markdown.`;
   private heuristicChatResponse(
     messages: ChatMessage[],
     role: "brand" | "influencer" | "creator" | "admin",
-    niche: string
+    niche: string,
+    userContext?: AssistantContext,
+    preferredLanguage: SupportedLanguageCode = "auto"
   ): string {
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
-    const lower = lastUserMessage.toLowerCase();
+    const normalizedRole = role === "brand" ? "brand" : "creator";
+    const res = generateSmartHeuristicResponse({
+      userMessage: lastUserMessage,
+      role: normalizedRole,
+      niche,
+      name: "Creator",
+      platform: userContext?.platform || "Instagram",
+      audience: userContext?.targetAudience || "Target Demographic",
+      brandOrProduct: userContext?.brandOrProduct,
+      tone: userContext?.tone || "Conversational",
+      goal: userContext?.contentGoal || "Engagement",
+      preferredLanguage,
+    });
+    return res.reply;
+  }
 
-    if (lower.includes("hook") || lower.includes("attention")) {
-      return `### 🎯 High-Converting Hook Formulas for ${niche}:
-1. **The Negative Hook**: *"Stop making this critical mistake in ${niche} if you want real results in 2026..."*
-2. **The Curiosity Gap**: *"The secret that top ${niche} brands don't want you to know..."*
-3. **The Proof Hook**: *"I tested 5 different approaches so you don't have to — here's what actually converts."*
-4. **The Time Frame Hook**: *"How to transform your ${niche.toLowerCase()} routine in just 7 days."*
+  /**
+   * AI-Assisted Creator Profile Draft Generation (Phase 3)
+   * Produces a structured profile draft based strictly on creator-supplied inputs.
+   * Never overwrites database profile without explicit user approval.
+   */
+  async generateCreatorProfileDraft(
+    input: GenerateCreatorProfileInput
+  ): Promise<GeneratedProfileDraft> {
+    return aiLogger.time("AIService.generateCreatorProfileDraft", async () => {
+      const validatedInput = GenerateCreatorProfileInputSchema.parse(input);
 
-*Tip: Deliver your hook within the first 2.5 seconds with on-screen dynamic text!*`;
-    }
+      if (this.provider.isConfigured()) {
+        try {
+          const prompt = `Generate an authentic, high-converting professional creator profile draft:
+Creator Name: ${validatedInput.name}
+Niche: ${validatedInput.niche}
+Provided Skills: ${validatedInput.skills.join(", ")}
+Experience: ${validatedInput.experience || "GenAI visual storyteller"}
+Content Categories: ${validatedInput.contentCategories?.join(", ") || "Commercial Media & UGC"}
+Preferred Campaign Types: ${validatedInput.campaignTypes?.join(", ") || "UGC & Visual Commercials"}
+Short Description of Work: ${validatedInput.workDescription || "None provided"}
+Portfolio Links: ${validatedInput.portfolioLinks?.join(", ") || "None"}
 
-    if (lower.includes("brief") || lower.includes("campaign")) {
-      return `### 📋 Campaign Brief Best Practices:
-To find the highest-matching creators on our marketplace:
-- **State clear deliverables**: (e.g. *3x 9:16 Instagram Reels with raw B-roll*).
-- **Target Audience**: Specify demographics, age group (e.g. *Women 18-35*), and consumer pain points.
-- **AI & Creative Tools**: Mention whether you need Midjourney storyboarding or CapCut dynamic subtitles.
-- **Budget & Rights**: Include transparent budget brackets and commercial usage terms (e.g. *30-day paid ad whitelisting*).
+CRITICAL RULES:
+1. Ground all claims strictly in the creator's stated skills, tools, and experience.
+2. DO NOT fabricate client names, awards, follower counts, ratings, or fake reviews.
+3. Suggest a clear, compelling professional headline.
+4. Craft an engaging 2-3 paragraph biography highlighting creative workflow and technical execution.
+5. Provide actionable completeness suggestions to help the creator achieve verification.
+6. Draft portfolio project descriptions only if links or descriptions are provided.`;
 
-*You can test your brief in our **Brand Dashboard** to see live AI creator match scores!*`;
-    }
+          const systemInstruction = `You are a Senior Creator Talent Architect for VeriCreator.
+Produce a professional, structured creator profile draft in strict JSON format.
+Keys:
+- professionalHeadline (string: 5-120 chars)
+- shortIntroduction (string: 10-300 chars)
+- bio (string: 50-2000 chars)
+- niche (string)
+- contentCategories (string[])
+- skills (string[])
+- suggestedTools (string[])
+- portfolioDrafts (array of { title, description, suggestedContentType, suggestedTools })
+- completenessSuggestions (string[])`;
 
-    if (lower.includes("portfolio") || lower.includes("profile") || lower.includes("skill")) {
-      return `### 🌟 Tips to Maximize Your Creator Profile & Match Score:
-1. **Showcase Measurable ROI**: Mention engagement rates, views, or conversion lift in your portfolio project descriptions.
-2. **Highlight AI Tool Proficiency**: Add tools like **Runway Gen-2**, **CapCut Pro**, or **Midjourney** to your skill stack.
-3. **Verify Your Skills**: Submit your best work for platform moderation to unlock the **Level 3 Verified Badge** (+25% match boost).
-4. **Keep Availability Current**: Brands filter by immediate availability for timely product launches!`;
-    }
+          const rawResult = await this.provider.generateStructuredJSON<Record<string, unknown>>(
+            prompt,
+            systemInstruction,
+            JSON.stringify(GeneratedProfileDraftSchema.shape)
+          );
 
-    if (lower.includes("idea") || lower.includes("topic") || lower.includes("suggest")) {
-      return `### 💡 3 Fresh Content Concepts for ${niche}:
-1. **Behind-The-Scenes Workflow**: *"How I produce 4K commercial-grade assets using modern creator workflows."*
-2. **Honest Product Tear-down**: *"Is this viral product actually worth your money? Real-world test."*
-3. **Beginner vs Pro Comparison**: *"Common rookie habits vs how seasoned creators handle ${niche.toLowerCase()}."*
+          return GeneratedProfileDraftSchema.parse({
+            ...rawResult,
+            isDraft: true,
+            generatedAt: new Date().toISOString(),
+            provider: this.provider.name,
+            isFallback: false,
+          });
+        } catch (err) {
+          const fallbackReason = err instanceof Error ? err.message : String(err);
+          aiLogger.warn(`${this.provider.name} call failed. Falling back to heuristic profile draft`, {
+            error: err,
+          });
+          return this.heuristicProfileDraft(validatedInput, fallbackReason);
+        }
+      }
 
-*Would you like me to write a full video script outline or a set of optimized hashtags for one of these?*`;
-    }
+      return this.heuristicProfileDraft(
+        validatedInput,
+        !this.provider.isConfigured() ? "AI provider credentials not configured" : undefined
+      );
+    });
+  }
 
-    // Default friendly assistant response
-    return `Hello! I'm your **AI Marketplace Assistant** for **${niche}**.
+  private heuristicProfileDraft(
+    input: GenerateCreatorProfileInput,
+    fallbackReason?: string
+  ): GeneratedProfileDraft {
+    const primarySkill = input.skills[0] || "Generative AI";
+    const headline = `AI ${input.niche} Specialist & ${primarySkill} Creator`;
+    const intro = `${input.name} is a specialized creator in ${input.niche}, leveraging ${input.skills.slice(0, 3).join(", ")} to craft high-impact commercial media.`;
 
-Here is how I can assist you right now:
-- 💡 **Content Ideas & Viral Hooks** tailored to your audience.
-- 📝 **Captions, Hashtags & Script Outlines** for Instagram Reels and YouTube.
-- 🎨 **Portfolio Optimization** to boost your AI match scores with top brands.
-- 💼 **Campaign Planning & Budgeting** for brands looking to hire creators.
+    const bioParagraphs = [
+      `${intro} Focused on elevating brand presence through precision promptcraft and aesthetic generative storytelling.`,
+      input.workDescription
+        ? `Creative approach: ${input.workDescription}. Workflows prioritize authentic brand voice, rapid asset iteration, and commercial conversion.`
+        : `Experienced in developing multi-platform visual assets, combining ${input.skills.join(", ")} with meticulous post-production standards.`,
+      `Available for collaborations across ${input.campaignTypes && input.campaignTypes.length > 0 ? input.campaignTypes.join(", ") : "commercial UGC, product demos, and campaign content"}. Open to direct brand engagements through VeriCreator.`,
+    ];
 
-What would you like to work on today?`;
+    const portfolioDrafts = (input.portfolioLinks && input.portfolioLinks.length > 0
+      ? input.portfolioLinks.map((link, idx) => ({
+          title: `${input.niche} Commercial Showcase #${idx + 1}`,
+          description: `Generative production sample utilizing ${input.skills.slice(0, 2).join(" & ")}. Evidence accessible at ${link}.`,
+          suggestedContentType: input.contentCategories?.[0] || "Generative UGC",
+          suggestedTools: input.skills.slice(0, 3),
+        }))
+      : input.workDescription
+      ? [
+          {
+            title: `${input.niche} Flagship Project`,
+            description: input.workDescription,
+            suggestedContentType: "Commercial Concept Reel",
+            suggestedTools: input.skills.slice(0, 2),
+          },
+        ]
+      : []
+    );
+
+    const completenessSuggestions: string[] = [];
+    if (!input.experience) completenessSuggestions.push("Add years of experience and notable career highlights to improve brand trust.");
+    if (!input.portfolioLinks || input.portfolioLinks.length === 0) completenessSuggestions.push("Link live portfolio media or YouTube/Instagram reels to unlock verified portfolio badges.");
+    if (input.skills.length < 3) completenessSuggestions.push("Add at least 3 specific AI tools and technical skills to maximize campaign match accuracy.");
+    completenessSuggestions.push("Complete skill benchmark tests in the Creator Passport to earn verified skill credentials.");
+
+    const normalizedTools = Array.from(
+      new Set([
+        ...input.skills.filter((s) => /midjourney|runway|flux|elevenlabs|pika|sora|claude|gpt|comfyui/i.test(s)),
+        "Midjourney v6",
+        "Runway Gen-3",
+      ])
+    );
+
+    return GeneratedProfileDraftSchema.parse({
+      professionalHeadline: headline.slice(0, 120),
+      shortIntroduction: intro.slice(0, 300),
+      bio: bioParagraphs.join("\n\n").slice(0, 2000),
+      niche: input.niche,
+      contentCategories: input.contentCategories && input.contentCategories.length > 0 ? input.contentCategories : [input.niche, "Generative AI", "UGC"],
+      skills: input.skills,
+      suggestedTools: normalizedTools,
+      portfolioDrafts,
+      completenessSuggestions,
+      isDraft: true,
+      generatedAt: new Date().toISOString(),
+      provider: fallbackReason ? `Heuristic Fallback (${fallbackReason.slice(0, 40)})` : "Deterministic Heuristic Engine",
+      isFallback: true,
+    });
   }
 }
 
@@ -866,3 +1005,5 @@ export const explainMatch = (
   customCreators?: CreatorMatchProfile[]
 ) => aiService.explainMatch(creatorId, campaign, customCreators);
 
+export const generateCreatorProfileDraft = (input: GenerateCreatorProfileInput) =>
+  aiService.generateCreatorProfileDraft(input);

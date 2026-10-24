@@ -9,6 +9,7 @@ import { getCurrentUser, logout, User as AuthUser } from "@/lib/auth";
 import { CREATORS_DATA, Creator } from "@/lib/creators-data";
 import { getStoredCreators, getCreatorById } from "@/lib/creators-store";
 import { AIChatbotModal } from "@/components/ai/AIChatbotModal";
+import { detectLegacyData, migrateLegacyDataToDatabase } from "@/lib/sync/local-storage-migrator";
 import {
   LayoutDashboard,
   User,
@@ -40,6 +41,20 @@ export function CreatorNav() {
   useEffect(() => {
     const user = getCurrentUser();
     setCurrentUser(user);
+
+    // Background idempotent migration of legacy localStorage data
+    if (user) {
+      const detection = detectLegacyData();
+      if (detection.hasLegacyData) {
+        migrateLegacyDataToDatabase()
+          .then((summary) => {
+            if (summary.succeeded > 0) {
+              console.log(`[Database Sync] Migrated ${summary.succeeded} legacy records to database.`);
+            }
+          })
+          .catch((err) => console.warn("[Database Sync] Migration notice:", err));
+      }
+    }
 
     const stored = getStoredCreators();
     const matched = user ? getCreatorById(user.id) || stored[0] : stored[0];
@@ -117,15 +132,16 @@ export function CreatorNav() {
 
   return (
     <>
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200/80 px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
+      {/* Top Header - Sophisticated Dark Navy V2 */}
+      <header className="sticky top-0 z-40 bg-[#0B0F19]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 transition-all">
         <div className="flex items-center gap-4 sm:gap-6">
-          <Logo size="sm" />
+          <Logo size="sm" theme="light" />
 
           {/* Verification Badge */}
-          <div className="hidden lg:flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 px-3 py-1 rounded-full text-xs font-semibold text-blue-700">
-            <Award className="w-3.5 h-3.5 text-blue-600" />
-            <span>AI Creator Portal · {creator.category}</span>
+          <div className="hidden lg:flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1 rounded-full text-xs font-semibold text-indigo-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <Award className="w-3.5 h-3.5 text-indigo-400" />
+            <span>AI Creator Portal &bull; {creator.category}</span>
           </div>
         </div>
 
@@ -135,7 +151,7 @@ export function CreatorNav() {
           <button
             type="button"
             onClick={() => setChatbotOpen(true)}
-            className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
+            className="flex items-center gap-1.5 py-1.5 px-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 text-white text-xs font-bold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
           >
             <Bot className="w-4 h-4" />
             <span className="hidden sm:inline">AI Assistant</span>
@@ -145,7 +161,7 @@ export function CreatorNav() {
           <Link
             href={`/creators/${creator.id}`}
             target="_blank"
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl border border-slate-700/60 transition"
             title="Preview how brands see your profile"
           >
             <span>Public Profile</span>
@@ -155,22 +171,24 @@ export function CreatorNav() {
           {/* Notifications */}
           <button
             type="button"
-            className="relative p-2 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+            className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition cursor-pointer border border-transparent hover:border-slate-700/60"
             aria-label="Notifications"
           >
             <Bell className="w-4.5 h-4.5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-[#0B0F19]" />
           </button>
 
           {/* User Menu */}
           <div className="relative">
             <button
               type="button"
+              aria-label="User navigation menu"
+              data-testid="creator-user-menu"
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer select-none"
+              className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700/80 transition-colors cursor-pointer select-none"
             >
               <div
-                className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-blue-500/30"
+                className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-indigo-500/40"
                 style={{ width: "32px", height: "32px", position: "relative" }}
               >
                 <Image
@@ -182,10 +200,10 @@ export function CreatorNav() {
                 />
               </div>
               <div className="hidden md:block text-left pr-1">
-                <p className="text-xs font-bold text-slate-900 leading-tight">
+                <p className="text-xs font-bold text-white leading-tight">
                   {creator.name}
                 </p>
-                <p className="text-[10px] text-emerald-600 font-semibold leading-none mt-0.5">
+                <p className="text-[10px] text-emerald-400 font-semibold leading-none mt-0.5">
                   Verified Creator
                 </p>
               </div>
@@ -193,56 +211,67 @@ export function CreatorNav() {
             </button>
 
             {userMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 animate-fadeIn">
-                <div className="px-4 py-2 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-900">{creator.name}</p>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {currentUser?.email || "anjali@creator.com"}
+              <div className="absolute right-0 mt-2 w-56 bg-[#0F172A] rounded-2xl shadow-2xl border border-slate-800 py-2 z-50 animate-fadeIn">
+                <div className="px-4 py-2 border-b border-slate-800">
+                  <p className="text-xs font-bold text-white">{creator.name}</p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {currentUser?.email || "creator@marketplace.com"}
                   </p>
                   <div className="mt-1 flex items-center gap-1.5">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-[11px] text-slate-600 font-medium">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[11px] text-slate-300 font-medium">
                       {creator.availability}
                     </span>
                   </div>
                 </div>
 
                 <div className="py-1">
+                  {currentUser?.role === "brand" && (
+                    <Link
+                      href="/brand/dashboard"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-indigo-400 hover:text-white hover:bg-slate-800/80 transition"
+                    >
+                      <ExternalLink className="w-4 h-4 text-indigo-400" />
+                      <span>Switch to Brand View</span>
+                    </Link>
+                  )}
                   <Link
                     href="/creator/profile"
                     onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                    className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition"
                   >
-                    <User className="w-4 h-4 text-slate-400" />
-                    Manage Profile
+                    <User className="w-4 h-4 text-indigo-400" />
+                    <span>Manage Profile</span>
                   </Link>
                   <Link
                     href="/creator/passport"
                     onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                    className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition"
                   >
-                    <ShieldCheck className="w-4 h-4 text-blue-500" />
-                    Skill Passport
+                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                    <span>Skill Passport</span>
                   </Link>
                   <Link
                     href={`/creators/${creator.id}`}
                     target="_blank"
                     onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                    className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium transition"
                   >
                     <ExternalLink className="w-4 h-4 text-slate-400" />
-                    View Public Page
+                    <span>View Public Page</span>
                   </Link>
                 </div>
 
-                <div className="border-t border-slate-100 pt-1">
+                <div className="border-t border-slate-800 pt-1">
                   <button
                     type="button"
+                    data-testid="creator-signout-btn"
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 font-medium cursor-pointer transition"
                   >
                     <LogOut className="w-4 h-4" />
-                    Sign Out
+                    <span>Sign Out</span>
                   </button>
                 </div>
               </div>
@@ -253,7 +282,7 @@ export function CreatorNav() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
+            className="md:hidden p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/60"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -262,25 +291,23 @@ export function CreatorNav() {
       </header>
 
       {/* Primary Navigation Tabs Bar */}
-      <nav className="bg-white border-b border-slate-200/90 px-4 sm:px-8 py-1.5 overflow-x-auto scrollbar-none hidden md:block">
-        <div className="flex items-center gap-1 sm:gap-2 max-w-7xl mx-auto">
+      <nav className="bg-[#0d1322] border-b border-slate-800/90 px-4 sm:px-8 py-2 overflow-x-auto scrollbar-none hidden md:block">
+        <div className="flex items-center gap-1.5 sm:gap-2 max-w-7xl mx-auto">
           {navLinks.map((link) => {
             const Icon = link.icon;
             return (
               <Link
                 key={link.name}
                 href={link.href}
-                className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 select-none ${
+                className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 select-none ${
                   link.active
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-md shadow-indigo-600/25"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800/70"
                 }`}
               >
                 <Icon
-                  className={`w-4 h-4 ${
-                    link.active
-                      ? "text-blue-400"
-                      : "text-slate-400 group-hover:text-slate-600"
+                  className={`w-3.5 h-3.5 ${
+                    link.active ? "text-white" : "text-slate-400 group-hover:text-slate-200"
                   }`}
                 />
                 <span>{link.name}</span>
@@ -288,8 +315,8 @@ export function CreatorNav() {
                   <span
                     className={`ml-1 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                       link.active
-                        ? "bg-blue-500 text-white"
-                        : "bg-blue-100 text-blue-700"
+                        ? "bg-white/20 text-white"
+                        : "bg-indigo-900/60 text-indigo-300 border border-indigo-500/30"
                     }`}
                   >
                     {link.badge}
@@ -303,7 +330,7 @@ export function CreatorNav() {
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-b border-slate-200 px-4 py-3 space-y-1 animate-fadeIn">
+        <div className="md:hidden bg-[#0B0F19] border-b border-slate-800 px-4 py-3 space-y-1 animate-fadeIn">
           {navLinks.map((link) => {
             const Icon = link.icon;
             return (
@@ -313,8 +340,8 @@ export function CreatorNav() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold ${
                   link.active
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700 hover:bg-slate-100"
+                    ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white"
+                    : "text-slate-300 hover:text-white hover:bg-slate-800"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
@@ -322,13 +349,23 @@ export function CreatorNav() {
                   <span>{link.name}</span>
                 </div>
                 {link.badge && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-900/70 text-indigo-300 font-bold border border-indigo-500/30">
                     {link.badge}
                   </span>
                 )}
               </Link>
             );
           })}
+          {currentUser?.role === "brand" && (
+            <Link
+              href="/brand/dashboard"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-indigo-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <ExternalLink className="w-4 h-4 text-indigo-400" />
+              <span>Switch to Brand View</span>
+            </Link>
+          )}
         </div>
       )}
 

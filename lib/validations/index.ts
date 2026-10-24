@@ -6,3 +6,5 @@ export * from "./campaign";
 export * from "./match";
 export * from "./review";
 export * from "./storage";
+export * from "./ai-profile";
+export * from "./recommendation-interaction";

@@ -1,9 +1,25 @@
 import { z } from "zod";
+import { SKILL_TESTS_CATALOG } from "@/lib/skill-passport-store";
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export const isValidTestIdentifier = (val: string): boolean => {
+  if (typeof val !== "string" || !val.trim()) return false;
+  if (UUID_REGEX.test(val)) return true;
+  return SKILL_TESTS_CATALOG.some((t) => t.id === val);
+};
 
 export const submitSkillTestSchema = z.object({
-  test_id: z.string().uuid("Invalid test ID"),
-  answers: z.record(z.string(), z.any()),
+  test_id: z.string().refine(isValidTestIdentifier, {
+    message: "Invalid test ID or unknown catalog slug",
+  }),
+  answers: z.record(z.string(), z.any()).default({}),
   evidence_media_urls: z.array(z.string().url("Must be a valid URL")).default([]),
+  score: z.number().min(0).max(100).optional().nullable(),
+  status: z.enum(["passed", "failed", "pending"]).optional(),
+  feedback: z.string().max(2000).optional().nullable(),
+  user_prompt: z.string().max(4000).optional().nullable(),
+  user_workflow_notes: z.string().max(4000).optional().nullable(),
 });
 
 export type SubmitSkillTestInput = z.infer<typeof submitSkillTestSchema>;

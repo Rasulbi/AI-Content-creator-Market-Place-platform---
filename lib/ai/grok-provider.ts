@@ -81,8 +81,10 @@ export class GrokProvider implements AIModelProvider {
       "GrokProvider.generateStructuredJSON",
       async () => {
         if (!this.isConfigured()) {
+          const envVar = this.isGroqCloud ? "GROQ_API_KEY" : "XAI_API_KEY";
+          const label = this.isGroqCloud ? "GROQ_NOT_CONFIGURED" : "GROK_NOT_CONFIGURED";
           throw new Error(
-            "GROK_NOT_CONFIGURED: XAI_API_KEY is missing or invalid. Please check your .env.local configuration."
+            `${label}: ${envVar} is missing or invalid. Please check your .env.local configuration.`
           );
         }
 
@@ -117,8 +119,10 @@ export class GrokProvider implements AIModelProvider {
       "GrokProvider.generateText",
       async () => {
         if (!this.isConfigured()) {
+          const envVar = this.isGroqCloud ? "GROQ_API_KEY" : "XAI_API_KEY";
+          const label = this.isGroqCloud ? "GROQ_NOT_CONFIGURED" : "GROK_NOT_CONFIGURED";
           throw new Error(
-            "GROK_NOT_CONFIGURED: XAI_API_KEY is missing or invalid. Please check your .env.local configuration."
+            `${label}: ${envVar} is missing or invalid. Please check your .env.local configuration.`
           );
         }
 
@@ -141,7 +145,7 @@ export class GrokProvider implements AIModelProvider {
   }
 
   /**
-   * Low-level helper for xAI Grok chat completions with full error handling and timeouts
+   * Low-level helper for chat completions with full error handling and timeouts
    */
   private async executeChatCompletion(payload: Record<string, unknown>): Promise<string> {
     const url = `${this.baseUrl}/chat/completions`;
@@ -160,9 +164,9 @@ export class GrokProvider implements AIModelProvider {
     } catch (networkErr) {
       const err = networkErr as Error;
       if (err.name === "TimeoutError") {
-        throw new Error("xAI Grok request timed out after 30 seconds.");
+        throw new Error(`${this.name} request timed out after 30 seconds.`);
       }
-      throw new Error(`xAI Grok network connection error: ${err.message}`);
+      throw new Error(`${this.name} network connection error: ${err.message}`);
     }
 
     if (!response.ok) {
@@ -175,13 +179,14 @@ export class GrokProvider implements AIModelProvider {
       }
 
       if (response.status === 401) {
+        const envVar = this.isGroqCloud ? "GROQ_API_KEY" : "XAI_API_KEY";
         throw new Error(
-          "xAI Grok authentication failed (HTTP 401). Please verify your XAI_API_KEY."
+          `${this.name} authentication failed (HTTP 401). Please verify your ${envVar}.`
         );
       }
       if (response.status === 429) {
         throw new Error(
-          "xAI Grok rate limit reached (HTTP 429). Please wait before retrying."
+          `${this.name} rate limit reached (HTTP 429). Please wait before retrying.`
         );
       }
 
@@ -200,7 +205,7 @@ export class GrokProvider implements AIModelProvider {
       }
 
       throw new Error(
-        `xAI Grok API error (HTTP ${response.status}): ${errorBody || response.statusText}`
+        `${this.name} API error (HTTP ${response.status}): ${errorBody || response.statusText}`
       );
     }
 
@@ -208,7 +213,7 @@ export class GrokProvider implements AIModelProvider {
     const content = data.choices?.[0]?.message?.content;
 
     if (typeof content !== "string") {
-      throw new Error("xAI Grok returned an empty or invalid response format.");
+      throw new Error(`${this.name} returned an empty or invalid response format.`);
     }
 
     return content;

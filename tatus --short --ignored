@@ -1,0 +1,39 @@
+warning: in the working copy of 'app/api/ai/match-creators/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/auth/login/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/auth/me/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/auth/profile/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/v1/tests/submissions/route.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/assistant/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/brand/dashboard/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/ai/AIChatbotModal.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/auth/AccountTypeCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/creator/CreatorCard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/ui/Badge.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/ui/Button.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/ui/Card.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'components/ui/Logo.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'lib/auth-server.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'next.config.ts', LF will be replaced by CRLF the next time Git touches it
+actions/ai-actions.ts:426: new blank line at EOF.
+app/api/auth/me/route.ts:138: new blank line at EOF.
+app/api/auth/profile/route.ts:330: new blank line at EOF.
+db/schema.sql:386: trailing whitespace.
+[32m+[m[32m        CASE[m[41m [m
+db/schema.sql:644: trailing whitespace.
+[32m+[m[32m        id = auth.uid()[m[41m [m
+db/schema.sql:1117: new blank line at EOF.
+lib/ai/ai-service.ts:928: trailing whitespace.
+[32m+[m[41m    [m
+lib/ai/ai-service.ts:1010: new blank line at EOF.
+lib/ai/pgvector-store.ts:76: trailing whitespace.
+[32m+[m[32m *[m[41m [m
+lib/auth-server.ts:3: trailing whitespace.
+[32m+[m[32m *[m[41m [m
+lib/auth-server.ts:5: trailing whitespace.
+[32m+[m[32m * - Supabase Auth is the single authoritative system for registration, login,[m[41m [m
+lib/supabase/client.ts:80: new blank line at EOF.
+lib/supabase/storage-helpers.ts:155: new blank line at EOF.
+tests/api/api-routes.test.ts:984: new blank line at EOF.
+tests/unit/pgvector.test.ts:88: new blank line at EOF.

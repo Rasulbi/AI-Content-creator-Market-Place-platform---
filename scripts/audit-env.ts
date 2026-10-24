@@ -20,6 +20,7 @@ const PLACEHOLDER_PATTERNS = [
   /your-service-role-key/i,
   /your-db-password/i,
   /your-key-here/i,
+  /your-gemini-key/i,
   /your-openrouter-key/i,
   /your-openai-key/i,
   /your-groq-key/i,
@@ -32,7 +33,7 @@ const PLACEHOLDER_PATTERNS = [
 ];
 
 export function auditEnvironment(): EnvAuditResult[] {
-  const activeProvider = (process.env.AI_PROVIDER || "openrouter").toLowerCase();
+  const activeProvider = (process.env.AI_PROVIDER || "gemini").toLowerCase();
 
   const variablesToCheck = [
     { name: "NEXT_PUBLIC_SUPABASE_URL", category: "SUPABASE" as const, requiredForProvider: false },
@@ -41,6 +42,7 @@ export function auditEnvironment(): EnvAuditResult[] {
     { name: "DATABASE_URL", category: "DATABASE" as const, requiredForProvider: false },
     { name: "AI_PROVIDER", category: "AI_CORE" as const, requiredForProvider: true },
     { name: "AI_MODEL", category: "AI_CORE" as const, requiredForProvider: true },
+    { name: "GEMINI_API_KEY", category: "AI_PROVIDER" as const, requiredForProvider: activeProvider === "gemini" },
     { name: "OPENROUTER_API_KEY", category: "AI_PROVIDER" as const, requiredForProvider: activeProvider === "openrouter" },
     { name: "OPENAI_API_KEY", category: "AI_PROVIDER" as const, requiredForProvider: activeProvider === "openai" },
     { name: "GROQ_API_KEY", category: "AI_PROVIDER" as const, requiredForProvider: activeProvider === "groq" },

@@ -1,11 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { loginWithEmail, UserRole } from "@/lib/auth";
 import { GoogleButton } from "./GoogleButton";
+
+function QueryErrorListener({ onError }: { onError: (msg: string) => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (errorParam) {
+      onError(decodeURIComponent(errorParam));
+    }
+  }, [searchParams, onError]);
+  return null;
+}
 
 interface LoginFormProps {
   role: UserRole;
@@ -58,6 +69,9 @@ export function LoginForm({
         return;
       }
 
+      // Clear sensitive password from client state immediately
+      setPassword("");
+
       // Successful redirect based on user role
       if (user.role === "brand") {
         router.push("/brand/dashboard");
@@ -72,13 +86,12 @@ export function LoginForm({
     }
   };
 
-  const handleForgotPassword = (e: React.MouseEvent) => {
-    e.preventDefault();
-    alert(`Password reset link will be sent to: ${email || "your email address"}`);
-  };
-
   return (
     <div className="w-full max-w-md mx-auto">
+      <Suspense fallback={null}>
+        <QueryErrorListener onError={setErrorMessage} />
+      </Suspense>
+
       {/* Title & Subtitle */}
       <div className="mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
@@ -99,7 +112,7 @@ export function LoginForm({
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Email Address */}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
             Email Address
           </label>
           <div className="relative">
@@ -113,17 +126,14 @@ export function LoginForm({
               placeholder={placeholderEmail}
               autoComplete="email"
               required
-              className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all"
-              style={{
-                borderColor: undefined,
-              }}
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium"
             />
           </div>
         </div>
 
         {/* Password */}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
             Password
           </label>
           <div className="relative">
@@ -137,12 +147,12 @@ export function LoginForm({
               placeholder="Enter your password"
               autoComplete="current-password"
               required
-              className="w-full pl-10 pr-11 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all"
+              className="w-full pl-10 pr-11 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-700 focus:outline-none cursor-pointer"
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? (
@@ -163,37 +173,36 @@ export function LoginForm({
               onChange={(e) => setRememberMe(e.target.checked)}
               className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
             />
-            <span>Remember me</span>
+            <span className="font-medium">Remember me</span>
           </label>
 
-          <button
-            type="button"
-            onClick={handleForgotPassword}
-            className={`font-semibold hover:underline cursor-pointer transition-colors ${
-              isBrand ? "text-purple-600 hover:text-purple-700" : "text-blue-600 hover:text-blue-700"
+          <Link
+            href={`/forgot-password?role=${role}${email ? `&email=${encodeURIComponent(email)}` : ""}`}
+            className={`font-bold hover:underline cursor-pointer transition-colors ${
+              isBrand ? "text-indigo-600 hover:text-indigo-700" : "text-blue-600 hover:text-blue-700"
             }`}
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
 
         {/* Submit Button */}
         <button
           type="submit"
           disabled={loading}
-          className={`w-full py-3.5 px-4 rounded-xl text-white text-sm font-semibold shadow-md transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 ${
+          className={`w-full py-3.5 px-4 rounded-xl text-white text-sm font-bold shadow-md transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 hover:scale-[1.01] active:scale-[0.98] ${
             isBrand
-              ? "bg-[#6355F6] hover:bg-[#5344e7] active:bg-[#4335d5] shadow-purple-600/25"
-              : "bg-[#1E60F2] hover:bg-[#1551d7] active:bg-[#0e43b8] shadow-blue-600/25"
+              ? "bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 shadow-indigo-600/25 hover:shadow-indigo-600/40"
+              : "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 shadow-blue-600/25 hover:shadow-blue-600/40"
           }`}
         >
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Verifying...</span>
+              <span>Verifying credentials...</span>
             </>
           ) : (
-            <span>Login</span>
+            <span>Log In</span>
           )}
         </button>
       </form>

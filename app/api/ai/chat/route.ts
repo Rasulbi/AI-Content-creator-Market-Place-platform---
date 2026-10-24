@@ -9,7 +9,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = ChatRequestSchema.parse(body);
 
-    const chatResult = await aiService.handleChatWithMetadata(validated.messages, validated.userContext);
+    const userContext = validated.userContext
+      ? {
+          ...validated.userContext,
+          preferredLanguage: validated.preferredLanguage || validated.userContext.preferredLanguage,
+        }
+      : validated.preferredLanguage
+      ? {
+          role: "creator" as const,
+          preferredLanguage: validated.preferredLanguage,
+        }
+      : undefined;
+
+    const chatResult = await aiService.handleChatWithMetadata(validated.messages, userContext);
 
     return NextResponse.json({
       success: true,
@@ -18,6 +30,9 @@ export async function POST(req: NextRequest) {
       provider: chatResult.provider,
       isFallback: chatResult.isFallback,
       fallbackReason: chatResult.fallbackReason,
+      detectedLanguage: chatResult.detectedLanguage,
+      effectiveLanguage: chatResult.effectiveLanguage,
+      dir: chatResult.dir,
     });
   } catch (err) {
     if (err instanceof ZodError) {

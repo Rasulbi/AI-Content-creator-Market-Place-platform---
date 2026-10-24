@@ -46,6 +46,8 @@ export const CreatorVerificationItemSchema = z.object({
   demoNotice: z.string().default("Demo Sandbox Profile: Social handles and telemetry are demonstration data. Real-world account verification requires live OAuth API sync."),
   matchScoreLabel: z.string().default("AI Campaign Match Score"),
   authenticityNotice: z.string().default("This AI score measures campaign requirements matching only. Real account authenticity & identity verification requires separate verified evidence (KYC & Live Platform API)."),
+  isFallback: z.boolean().default(false),
+  engine: z.enum(["ai_model", "heuristic_fallback"]).default("heuristic_fallback"),
 });
 export type CreatorVerificationItem = z.infer<typeof CreatorVerificationItemSchema>;
 
@@ -78,5 +80,6 @@ export const VerifyCreatorsOutputSchema = z.object({
   provider: z.string(),
   timestamp: z.string(),
   isAIAssisted: z.boolean().default(true),
+  isFallback: z.boolean().default(false),
 });
 export type VerifyCreatorsOutput = z.infer<typeof VerifyCreatorsOutputSchema>;

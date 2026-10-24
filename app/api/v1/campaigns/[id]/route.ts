@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getCurrentBrandUser } from "@/lib/supabase/auth-helpers";
+import { createClient, createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { getCurrentBrandUser, getAuthenticatedUser } from "@/lib/supabase/auth-helpers";
 import { updateCampaignSchema } from "@/lib/validations";
 
 export async function GET(
@@ -9,9 +9,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: "Campaign not found (Database not configured)" }, { status: 404 });
+    }
 
-    const { data, error } = await supabase
+    const adminSupabase = createAdminClient();
+
+    const { data, error } = await adminSupabase
       .from("campaigns")
       .select("*, users!inner(full_name, company_name, avatar_url), matches(*, creator_profiles(*))")
       .eq("id", id)
@@ -19,6 +23,15 @@ export async function GET(
 
     if (error || !data) {
       return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    }
+
+    // Strict Authorization Parity (mirroring DB RLS):
+    // If campaign is not active (draft, cancelled, in_progress, completed), ensure caller is the brand owner or an admin
+    if (data.status !== "active") {
+      const auth = await getAuthenticatedUser();
+      if (!auth || (auth.authId !== data.brand_id && auth.user.role !== "admin")) {
+        return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+      }
     }
 
     return NextResponse.json({ data });
@@ -33,6 +46,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
     const { user } = await getCurrentBrandUser();
     const body = await request.json();
     const validated = updateCampaignSchema.parse({ ...body, id });
@@ -74,20 +91,32 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
     const { user } = await getCurrentBrandUser();
     const supabase = await createClient();
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("campaigns")
       .delete()
       .eq("id", id)
-      .eq("brand_id", user.id);
+      .eq("brand_id", user.id)
+      .select("id");
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, message: "Campaign deleted" });
+    if (!data || data.length === 0) {
+      return NextResponse.json(
+        { error: "Campaign not found or you do not have permission to delete it" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: "Campaign deleted", id });
   } catch (err: any) {
     const status = err.name === "AuthError" ? err.statusCode : 400;
     return NextResponse.json({ error: err?.message || "Delete failed" }, { status });

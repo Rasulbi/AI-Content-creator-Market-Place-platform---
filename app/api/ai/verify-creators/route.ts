@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       data: result,
       provider: result.provider,
       engine: result.engine,
+      isFallback: result.isFallback,
       timestamp: result.timestamp,
     });
   } catch (err) {
