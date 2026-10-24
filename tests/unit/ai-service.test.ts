@@ -187,6 +187,78 @@ describe("Unit Tests: AIService Core Abstraction & Scoring Engine", () => {
       assert.equal(chat.isFallback, true);
       assert.equal(chat.engine, "heuristic_fallback");
       assert.ok(chat.fallbackReason?.includes("402"));
+
+      // 3. analyzeCreatorProfile fallback provenance
+      const profileAnalysis = await service.analyzeCreatorProfile({
+        name: "Priya Sharma",
+        category: "Beauty & Skincare",
+        bio: "Skincare enthusiast and macro texture video creator.",
+        skills: ["Skincare Routine", "Macro Video"],
+        portfolioCount: 5,
+        portfolioSamples: [{ title: "Serum Review", description: "Product demo", tools: ["Sony FX3", "CapCut"] }],
+        followers: "120K",
+        engagementRate: "4.8%",
+        platforms: ["Instagram"],
+        contentTypes: ["Reels"],
+      });
+      assert.equal(profileAnalysis.isFallback, true, "Profile analysis must record isFallback: true on provider failure");
+      assert.equal(profileAnalysis.engine, "heuristic_fallback", "Profile analysis engine must be heuristic_fallback");
+      assert.equal(profileAnalysis.provider, "Heuristic Audit Engine", "Profile analysis provider must be Heuristic Audit Engine");
+      assert.ok(profileAnalysis.overallReadinessScore >= 0 && profileAnalysis.overallReadinessScore <= 100);
+
+      // 4. generateContentSuggestions fallback provenance
+      const contentSuggestions = await service.generateContentSuggestions({
+        niche: "Beauty & Skincare",
+        targetAudience: "Young professionals",
+        platform: "Instagram Reels",
+        contentGoal: "Brand Awareness",
+        preferredFormat: "30s Short-Form Video",
+      });
+      assert.equal(contentSuggestions.isFallback, true, "Content suggestions must record isFallback: true on provider failure");
+      assert.equal(contentSuggestions.engine, "heuristic_fallback", "Content suggestions engine must be heuristic_fallback");
+      assert.equal(contentSuggestions.provider, "Heuristic Fallback Engine", "Content suggestions provider must be Heuristic Fallback Engine");
+      assert.ok(contentSuggestions.suggestions.length > 0);
+    });
+
+    it("should record actual model and engine: ai_model when analyzeCreatorProfile model succeeds", async () => {
+      const mockSuccessProvider: AIModelProvider = {
+        id: "gemini",
+        name: "Google Gemini",
+        model: "gemini-2.5-flash",
+        isConfigured: () => true,
+        generateText: async () => "Mock text",
+        generateStructuredJSON: async <T>(): Promise<T> =>
+          ({
+            strengths: ["Deep ingredient knowledge", "High aesthetic lighting"],
+            relevantSkills: ["Skincare Routine", "UGC Video"],
+            suitableCategories: ["Beauty & Skincare", "Wellness"],
+            recommendedCampaignTypes: ["Serum Launch", "Routine Breakdown"],
+            potentialImprovementAreas: ["Expand into YouTube Shorts"],
+            campaignMatchAffinities: [
+              { campaignType: "Product Review", matchScore: 95, reason: "Excellent portfolio examples" },
+            ],
+            overallReadinessScore: 92,
+          } as unknown as T),
+      };
+
+      const liveService = new AIService(mockSuccessProvider);
+      const result = await liveService.analyzeCreatorProfile({
+        name: "Ananya Rao",
+        category: "Beauty & Skincare",
+        bio: "Certified aesthetician and beauty product reviewer.",
+        skills: ["Skincare Routine", "UGC Video"],
+        portfolioCount: 8,
+        portfolioSamples: [{ title: "Hydra Serum", description: "Macro testing", tools: ["Midjourney", "Premiere"] }],
+        followers: "240K",
+        engagementRate: "5.4%",
+        platforms: ["Instagram"],
+        contentTypes: ["Reels", "UGC"],
+      });
+
+      assert.equal(result.isFallback, false, "Live model analysis must record isFallback: false");
+      assert.equal(result.engine, "ai_model", "Live model analysis engine must be ai_model");
+      assert.equal(result.provider, "Google Gemini", "Live model provider must be Google Gemini");
+      assert.equal(result.overallReadinessScore, 92);
     });
   });
 });

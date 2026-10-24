@@ -24,8 +24,29 @@ import {
   Calendar,
   Layers,
   Wand2,
+  TrendingUp,
+  Award,
+  Search,
+  Globe,
 } from "lucide-react";
 import { ChatMessage, AssistantContext } from "@/lib/ai/types";
+import {
+  RecommendedCreatorItem,
+  RecommendedCampaignItem,
+  CreatorComparisonItem,
+} from "@/lib/ai/chatbot-engine";
+import {
+  RecommendedCreatorCard,
+  RecommendedCampaignCard,
+  CreatorComparisonCard,
+} from "@/components/ai/ChatbotCards";
+import {
+  SUPPORTED_LANGUAGES,
+  SupportedLanguageCode,
+  getChatbotStrings,
+  getLanguageMetadata,
+} from "@/lib/ai/multilingual";
+import { getCurrentUser } from "@/lib/auth";
 
 export interface AIChatbotModalProps {
   isOpen: boolean;
@@ -41,6 +62,12 @@ interface EnrichedChatMessage extends ChatMessage {
   provider?: string;
   model?: string;
   timestamp?: string;
+  recommendedCreators?: RecommendedCreatorItem[];
+  recommendedCampaigns?: RecommendedCampaignItem[];
+  comparisonData?: CreatorComparisonItem[];
+  detectedLanguage?: SupportedLanguageCode;
+  effectiveLanguage?: SupportedLanguageCode;
+  dir?: "ltr" | "rtl";
 }
 
 const PLATFORMS = [
@@ -78,7 +105,20 @@ export function AIChatbotModal({
   creatorId,
   userName,
 }: AIChatbotModalProps) {
-  const isBrand = userRole === "brand";
+  // Allow toggling between Brand Owner and Creator assistant modes
+  const [activeRole, setActiveRole] = useState<"brand" | "creator">(
+    userRole === "brand" ? "brand" : "creator"
+  );
+  const isBrand = activeRole === "brand";
+
+  // Multilingual State
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguageCode>("auto");
+  const [lastDetectedLanguage, setLastDetectedLanguage] = useState<SupportedLanguageCode>("en");
+
+  const effectiveLangCode = selectedLanguage === "auto" ? lastDetectedLanguage : selectedLanguage;
+  const currentLangMeta = getLanguageMetadata(effectiveLangCode);
+  const activeDir = currentLangMeta.dir;
+  const currentStrings = getChatbotStrings(effectiveLangCode);
 
   // Optional Context State
   const [platform, setPlatform] = useState("Instagram");
@@ -97,39 +137,75 @@ export function AIChatbotModal({
         const existing = sessionStorage.getItem("ai_advisor_session_id");
         if (existing) {
           setSessionId(existing);
-          return;
+        } else {
+          const created = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          try {
+            sessionStorage.setItem("ai_advisor_session_id", created);
+          } catch {}
+          setSessionId(created);
         }
-        const created = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        try {
-          sessionStorage.setItem("ai_advisor_session_id", created);
-        } catch {}
-        setSessionId(created);
+
+        // Restore language preference (guest or authenticated user scoped)
+        const user = getCurrentUser();
+        const userScopedKey = user ? `vericreator_user_lang_${user.id}` : null;
+        const stored =
+          (userScopedKey && localStorage.getItem(userScopedKey)) ||
+          localStorage.getItem("vericreator_chatbot_language");
+        if (stored && SUPPORTED_LANGUAGES.some((l) => l.code === stored)) {
+          setSelectedLanguage(stored as SupportedLanguageCode);
+        }
       }
     } catch {
       setSessionId(`sess_${Date.now()}`);
     }
   }, []);
 
-  const defaultGreeting: EnrichedChatMessage = {
-    role: "assistant",
-    content: isBrand
-      ? `👋 **Hello! I'm your Production AI Assistant for Brand Marketing.**\n\nI support free-form and guided requests across:\n- 🎬 **Campaign Concepts & Deliverables**: High-ROI briefs for **${userNiche}**\n- 🤝 **Influencer Collaboration**: Outreach pitches, contracts, and compensation benchmarks\n- ✍️ **Product Copy & Ad Angles**: Captions, hooks, and sales scripts\n- 📅 **Campaign Calendars**: Omnichannel launch schedules\n\nEnter any custom request below, or choose an example prompt to get started!`
-      : `👋 **Hi ${userName || "Creator"}! I'm your Production AI Creative Assistant.**\n\nI can help you build and scale your presence in **${userNiche}**:\n- 🎬 **Reel / Video Scripts**: Scene-by-scene shot lists with 3-second hooks & audio cues\n- ✍️ **Captions & Viral Hooks**: Multi-platform copy with high-save hashtag clusters\n- 📅 **7-Day Content Schedules**: Structured daily posting plans with format guidelines\n- 💼 **Brand Deals & Monetization**: Value-based pricing, pitch letters, and escrow deals\n- 🔄 **Rewriting & Polishing**: Improving tone, structure, and readability\n\nEnter any free-form request or pick from the ideas below!`,
-    provider: "AI Assistant",
-    timestamp: "Just now",
+  const getGreeting = (
+    role: "brand" | "creator",
+    lang: SupportedLanguageCode = "auto"
+  ): EnrichedChatMessage => {
+    const eff = lang === "auto" ? lastDetectedLanguage : lang;
+    const strings = getChatbotStrings(eff);
+    const meta = getLanguageMetadata(eff);
+    return {
+      role: "assistant",
+      content: role === "brand" ? strings.brandGreeting : strings.creatorGreeting,
+      provider: "AI Assistant",
+      timestamp: "Just now",
+      effectiveLanguage: eff,
+      dir: meta.dir,
+    };
   };
 
-  const [messages, setMessages] = useState<EnrichedChatMessage[]>([defaultGreeting]);
+  const [messages, setMessages] = useState<EnrichedChatMessage[]>([getGreeting(activeRole, selectedLanguage)]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([
-    "Suggest content ideas for my niche.",
-    "How can I increase audience engagement?",
-    "Create a weekly content plan.",
-    "How can I monetize my content?",
-  ]);
+
+  // Quick Action Suggestions by Role
+  const brandQuickActions = [
+    { label: "🔍 Find Skincare Creators", query: "I want to promote a skincare product. Which creators are suitable?" },
+    { label: "👗 Women's Fashion", query: "Suggest creators for a women's fashion brand." },
+    { label: "💰 Budget ₹10,000", query: "Which creator is best for my product with a budget of ₹10,000?" },
+    { label: "⚖️ Compare Creators", query: "Compare three top creators in Technology and recommend the best match." },
+    { label: "🎬 15s Reel Campaign", query: "Suggest a 15-second Instagram Reel campaign for my clothing brand." },
+    { label: "👟 Nike Strategy", query: "Suggest a marketing strategy for Nike shoes." },
+    { label: "📱 Samsung Smartphone", query: "How can I promote a Samsung smartphone with AI creators?" },
+  ];
+
+  const creatorQuickActions = [
+    { label: "💼 Find Matching Campaigns", query: "Which campaigns match my skills and audience?" },
+    { label: "💡 Skincare Content Ideas", query: "Suggest content ideas for a skincare product." },
+    { label: "🎬 15s Instagram Reel", query: "How can I create a 15-second Instagram Reel?" },
+    { label: "🤝 Brand Proposal", query: "Write a collaboration proposal for a clothing brand." },
+    { label: "👗 Fashion Brands", query: "Which brands are suitable for my fashion profile?" },
+    { label: "📈 Boost Profile & Score", query: "How can I improve my profile and AI match score?" },
+  ];
+
+  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(
+    isBrand ? currentStrings.suggestedFollowUpsBrand : currentStrings.suggestedFollowUpsCreator
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +222,44 @@ export function AIChatbotModal({
     }
   }, [messages, isOpen, scrollToBottom]);
 
+  // Handle switching response language immediately and persisting preference
+  const handleLanguageChange = (newLang: SupportedLanguageCode) => {
+    setSelectedLanguage(newLang);
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("vericreator_chatbot_language", newLang);
+        const user = getCurrentUser();
+        if (user) {
+          localStorage.setItem(`vericreator_user_lang_${user.id}`, newLang);
+        }
+        document.cookie = `vericreator_chatbot_lang=${newLang}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch {}
+
+    if (messages.length <= 1) {
+      setMessages([getGreeting(activeRole, newLang)]);
+    }
+
+    const eff = newLang === "auto" ? lastDetectedLanguage : newLang;
+    const strings = getChatbotStrings(eff);
+    setSuggestedPrompts(
+      activeRole === "brand" ? strings.suggestedFollowUpsBrand : strings.suggestedFollowUpsCreator
+    );
+  };
+
+  // Handle switching between Brand and Creator assistant mode
+  const handleRoleSwitch = (newRole: "brand" | "creator") => {
+    setActiveRole(newRole);
+    if (messages.length <= 1) {
+      setMessages([getGreeting(newRole, selectedLanguage)]);
+    }
+    const eff = selectedLanguage === "auto" ? lastDetectedLanguage : selectedLanguage;
+    const strings = getChatbotStrings(eff);
+    setSuggestedPrompts(
+      newRole === "brand" ? strings.suggestedFollowUpsBrand : strings.suggestedFollowUpsCreator
+    );
+  };
+
   // Load persisted history from Supabase if available
   useEffect(() => {
     if (!isOpen || !sessionId) return;
@@ -161,9 +275,12 @@ export function AIChatbotModal({
             content: m.content,
             provider: m.metadata?.provider,
             model: m.metadata?.model,
-            timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date(m.created_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           }));
-          setMessages([defaultGreeting, ...loaded]);
+          setMessages([getGreeting(activeRole), ...loaded]);
         }
       } catch {
         // Silently keep default greeting on error
@@ -171,7 +288,7 @@ export function AIChatbotModal({
     }
 
     loadPastHistory();
-  }, [isOpen, sessionId]);
+  }, [isOpen, sessionId, activeRole]);
 
   if (!isOpen) return null;
 
@@ -179,7 +296,7 @@ export function AIChatbotModal({
     const text = (textToSend || input).trim();
     if (!text || loading) return;
 
-    // Ensure session ID is initialized before making the API request
+    // Ensure session ID is initialized
     let activeSessionId = sessionId;
     if (!activeSessionId) {
       activeSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -194,29 +311,30 @@ export function AIChatbotModal({
     setError(null);
     if (!isRegenerate) {
       setInput("");
-      // Reset textarea height
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     }
 
     const newMessages: EnrichedChatMessage[] = isRegenerate
-      ? [...messages]
+      ? (messages[messages.length - 1]?.role === "assistant" ? messages.slice(0, -1) : [...messages])
       : [
           ...messages,
           {
             role: "user",
             content: text,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           },
         ];
 
     setMessages(newMessages);
     setLoading(true);
 
-    // Initialize AbortController for cancel generation
     abortControllerRef.current = new AbortController();
 
     const contextPayload: AssistantContext = {
-      role: isBrand ? "brand" : "creator",
+      role: activeRole,
       niche: userNiche,
       platform,
       targetAudience: targetAudience.trim() || undefined,
@@ -233,8 +351,12 @@ export function AIChatbotModal({
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          userContext: contextPayload,
+          userContext: {
+            ...contextPayload,
+            preferredLanguage: selectedLanguage,
+          },
           sessionId: activeSessionId,
+          preferredLanguage: selectedLanguage,
         }),
       });
 
@@ -244,6 +366,10 @@ export function AIChatbotModal({
         throw new Error(data.error || "Failed to receive response from AI Assistant");
       }
 
+      if (data.detectedLanguage) {
+        setLastDetectedLanguage(data.detectedLanguage);
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -251,7 +377,16 @@ export function AIChatbotModal({
           content: data.message,
           provider: data.provider,
           model: data.model,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          recommendedCreators: data.recommendedCreators,
+          recommendedCampaigns: data.recommendedCampaigns,
+          comparisonData: data.comparisonData,
+          detectedLanguage: data.detectedLanguage,
+          effectiveLanguage: data.effectiveLanguage,
+          dir: data.dir || (data.effectiveLanguage === "ar" ? "rtl" : "ltr"),
         },
       ]);
 
@@ -266,7 +401,10 @@ export function AIChatbotModal({
             role: "assistant",
             content: "⏹️ *[Generation was stopped by the user]*",
             provider: "user-stopped",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           },
         ]);
         return;
@@ -305,18 +443,16 @@ export function AIChatbotModal({
 
   const handleReset = () => {
     handleStop();
-    setMessages([defaultGreeting]);
-    setSuggestedPrompts([
-      "Suggest content ideas for my niche.",
-      "How can I increase audience engagement?",
-      "Create a weekly content plan.",
-      "How can I monetize my content?",
-    ]);
+    setMessages([getGreeting(activeRole, selectedLanguage)]);
+    const eff = selectedLanguage === "auto" ? lastDetectedLanguage : selectedLanguage;
+    const strings = getChatbotStrings(eff);
+    setSuggestedPrompts(
+      activeRole === "brand" ? strings.suggestedFollowUpsBrand : strings.suggestedFollowUpsCreator
+    );
     setError(null);
     setInput("");
   };
 
-  // Keyboard Navigation: Enter submits, Shift+Enter adds newline
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -324,55 +460,13 @@ export function AIChatbotModal({
     }
   };
 
-  // Auto-resize textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     e.target.style.height = "auto";
     e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
   };
 
-  // Categorized Empty State Prompts
-  const promptCategories = [
-    {
-      category: "Reels & Scripts",
-      icon: Film,
-      color: "text-purple-600 bg-purple-50 hover:bg-purple-100 border-purple-200",
-      prompts: [
-        `Write a 30s viral Reel script for ${userNiche} with shot list and hooks`,
-        `Create a high-retention 15s TikTok concept demonstrating ${brandOrProduct || "my core tool"}`,
-      ],
-    },
-    {
-      category: "Captions & Hooks",
-      icon: PenTool,
-      color: "text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-200",
-      prompts: [
-        `Give me 5 viral hooks and a high-converting caption with hashtags for ${platform}`,
-        `Generate 3 persuasive calls-to-action (CTAs) that drive comments and saves`,
-      ],
-    },
-    {
-      category: "Brand & Campaigns",
-      icon: Briefcase,
-      color: "text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border-emerald-200",
-      prompts: [
-        isBrand
-          ? `Draft an influencer collaboration brief for a ${userNiche} product launch`
-          : `Write a compelling 3-sentence sponsorship pitch letter to a brand in ${userNiche}`,
-        `What deliverables and commercial ad usage rights should be included in a creator contract?`,
-      ],
-    },
-    {
-      category: "Strategy & Calendar",
-      icon: Calendar,
-      color: "text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-200",
-      prompts: [
-        `Create a 7-day content schedule for ${platform} optimized for ${goal}`,
-        `How can I increase my audience retention rate within the first 3 seconds?`,
-      ],
-    },
-  ];
-
+  const activeQuickActions = isBrand ? brandQuickActions : creatorQuickActions;
   const hasOnlyGreeting = messages.length === 1 && messages[0].role === "assistant";
 
   return (
@@ -382,7 +476,7 @@ export function AIChatbotModal({
       aria-label="AI Creative & Marketing Assistant"
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
     >
-      <div className="bg-white w-full max-w-3xl h-[94vh] sm:h-[720px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-slate-200 overflow-hidden">
+      <div className="bg-white w-full max-w-3xl h-[94vh] sm:h-[740px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-slate-200 overflow-hidden">
         {/* Header */}
         <div className="px-5 py-3.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0 shadow-sm">
           <div className="flex items-center gap-3">
@@ -391,23 +485,69 @@ export function AIChatbotModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold tracking-tight">AI Creative Assistant</h2>
+                <h2 className="text-sm font-bold tracking-tight">{currentStrings.title}</h2>
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live AI
+                  {currentStrings.liveBadge}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-300 flex items-center gap-1.5 mt-0.5">
-                <span>{isBrand ? "Brand Marketer" : "Creator"}</span>
-                <span>•</span>
-                <span>{userNiche}</span>
-                <span>•</span>
-                <span>{platform}</span>
-              </p>
+
+              {/* Role Toggle Switcher in Header */}
+              <div className="flex items-center gap-2 mt-1">
+                <div className="inline-flex bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/80 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => handleRoleSwitch("brand")}
+                    className={`px-2 py-0.5 rounded font-medium transition cursor-pointer ${
+                      isBrand
+                        ? "bg-indigo-600 text-white shadow-xs font-semibold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {currentStrings.roleBrand}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRoleSwitch("creator")}
+                    className={`px-2 py-0.5 rounded font-medium transition cursor-pointer ${
+                      !isBrand
+                        ? "bg-indigo-600 text-white shadow-xs font-semibold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {currentStrings.roleCreator}
+                  </button>
+                </div>
+                <span className="text-[11px] text-slate-400 hidden sm:inline">•</span>
+                <span className="text-[11px] text-slate-300 hidden sm:inline">{userNiche}</span>
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Language Selector */}
+            <div className="relative inline-flex items-center">
+              <label htmlFor="chatbot-language-select" className="sr-only">
+                {currentStrings.selectLanguageLabel}
+              </label>
+              <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-800/90 hover:bg-slate-800 text-slate-200 border border-slate-700/90 rounded-xl text-xs font-medium transition shadow-xs">
+                <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" aria-hidden="true" />
+                <select
+                  id="chatbot-language-select"
+                  aria-label={currentStrings.selectLanguageLabel}
+                  value={selectedLanguage}
+                  onChange={(e) => handleLanguageChange(e.target.value as SupportedLanguageCode)}
+                  className="bg-transparent text-slate-200 text-xs font-medium focus:outline-none cursor-pointer pr-1"
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-100 py-1">
+                      {lang.code === "auto" ? "🌐 Auto-detect" : `${lang.nativeName} (${lang.name})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Context Controls Toggle */}
             <button
               type="button"
@@ -420,7 +560,7 @@ export function AIChatbotModal({
               }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Context</span>
+              <span className="hidden sm:inline">{currentStrings.contextButton}</span>
               {showContextDrawer ? (
                 <ChevronUp className="w-3 h-3 hidden sm:inline" />
               ) : (
@@ -437,14 +577,14 @@ export function AIChatbotModal({
               className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer flex items-center gap-1 text-xs"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear</span>
+              <span className="hidden sm:inline">{currentStrings.clearButton}</span>
             </button>
 
             {/* Close */}
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close assistant"
+              aria-label={currentStrings.closeButton}
               className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -459,7 +599,7 @@ export function AIChatbotModal({
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-indigo-300 flex items-center gap-1.5">
                   <Wand2 className="w-3.5 h-3.5" />
-                  Customize Target Context & Output Tone
+                  Customize Target Context & Output Tone ({isBrand ? "Brand Marketer" : "Creator"})
                 </span>
                 <span className="text-[10px] text-slate-400">
                   Applied to all forthcoming responses
@@ -522,7 +662,7 @@ export function AIChatbotModal({
                     type="text"
                     value={brandOrProduct}
                     onChange={(e) => setBrandOrProduct(e.target.value)}
-                    placeholder="e.g. Lumina Skin Glow, AutoScribe AI"
+                    placeholder="e.g. Nike Air Max, Samsung S24, Skincare Serum"
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs placeholder:text-slate-500 focus:ring-1 focus:ring-indigo-500 outline-none"
                   />
                 </div>
@@ -563,15 +703,61 @@ export function AIChatbotModal({
                 )}
 
                 <div
-                  className={`max-w-[88%] sm:max-w-[82%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
+                  dir={m.dir || (m.role === "assistant" && activeDir === "rtl" ? "rtl" : undefined)}
+                  className={`max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed ${
                     isUser
                       ? "bg-indigo-600 text-white rounded-tr-none shadow-md"
                       : "bg-white text-slate-800 rounded-tl-none border border-slate-200/90 shadow-sm"
-                  }`}
+                  } ${m.dir === "rtl" ? "text-right" : ""}`}
                 >
                   <div className="whitespace-pre-wrap font-sans space-y-2.5 selection:bg-indigo-100 selection:text-indigo-900">
                     {m.content}
                   </div>
+
+                  {/* Render Recommended Creators if available */}
+                  {!isUser &&
+                    m.recommendedCreators &&
+                    m.recommendedCreators.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-indigo-600" />
+                          <h4 className="font-bold text-xs text-slate-900">
+                            Verified Creator Recommendations ({m.recommendedCreators.length} Matches)
+                          </h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {m.recommendedCreators.map((creator) => (
+                            <RecommendedCreatorCard key={creator.id} creator={creator} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Render Recommended Campaigns if available */}
+                  {!isUser &&
+                    m.recommendedCampaigns &&
+                    m.recommendedCampaigns.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-indigo-600" />
+                          <h4 className="font-bold text-xs text-slate-900">
+                            Matching Brand Campaigns ({m.recommendedCampaigns.length})
+                          </h4>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {m.recommendedCampaigns.map((camp) => (
+                            <RecommendedCampaignCard key={camp.id} campaign={camp} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Render Creator Comparison Table if available */}
+                  {!isUser && m.comparisonData && m.comparisonData.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-slate-100">
+                      <CreatorComparisonCard comparison={m.comparisonData} />
+                    </div>
+                  )}
 
                   {!isUser && (
                     <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
@@ -629,43 +815,36 @@ export function AIChatbotModal({
             );
           })}
 
-          {/* Categorized Example Prompts in Empty State */}
+          {/* Quick-Start Cards for Empty State */}
           {hasOnlyGreeting && (
             <div className="pt-2 pb-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 px-1">
-                <Layers className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Explore Prompt Templates by Category</span>
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>
+                    Quick-Start Questions for {isBrand ? "Brand Owners" : "Creators"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400">Click any card to ask</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {promptCategories.map((cat, ci) => {
-                  const CatIcon = cat.icon;
-                  return (
-                    <div
-                      key={ci}
-                      className="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-xs space-y-2"
-                    >
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
-                        <CatIcon className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>{cat.category}</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {cat.prompts.map((p, pi) => (
-                          <button
-                            key={pi}
-                            type="button"
-                            onClick={() => handleSend(p)}
-                            disabled={loading}
-                            className="w-full text-left text-[11px] leading-snug p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:text-indigo-900 border border-slate-100 transition cursor-pointer text-slate-600 flex items-start justify-between gap-1 group"
-                          >
-                            <span className="line-clamp-2">{p}</span>
-                            <Sparkles className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 shrink-0 mt-0.5 transition" />
-                          </button>
-                        ))}
-                      </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {activeQuickActions.map((action, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSend(action.query)}
+                    className="p-3 rounded-2xl bg-white hover:bg-indigo-50/70 border border-slate-200/90 hover:border-indigo-200 text-left transition group cursor-pointer shadow-2xs"
+                  >
+                    <div className="font-semibold text-xs text-slate-800 group-hover:text-indigo-900 flex items-center justify-between">
+                      <span>{action.label}</span>
+                      <Sparkles className="w-3 h-3 text-slate-300 group-hover:text-indigo-600 transition" />
                     </div>
-                  );
-                })}
+                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                      &quot;{action.query}&quot;
+                    </p>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -679,16 +858,16 @@ export function AIChatbotModal({
               <div className="bg-white border border-slate-200/90 px-4 py-3 rounded-2xl shadow-sm text-slate-700 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                  <span>Generating tailored marketing recommendations...</span>
+                  <span>{currentStrings.typingIndicator}</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleStop}
-                  aria-label="Stop generation"
+                  aria-label={currentStrings.stopButton}
                   className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-[11px] flex items-center gap-1 transition cursor-pointer"
                 >
                   <Square className="w-3 h-3 fill-rose-600 text-rose-600" />
-                  <span>Stop</span>
+                  <span>{currentStrings.stopButton}</span>
                 </button>
               </div>
             </div>
@@ -709,7 +888,7 @@ export function AIChatbotModal({
                 }}
                 className="px-3 py-1 rounded-lg bg-rose-600 text-white font-bold hover:bg-rose-700 transition cursor-pointer shrink-0"
               >
-                Retry
+                {currentStrings.retryButton}
               </button>
             </div>
           )}
@@ -721,7 +900,7 @@ export function AIChatbotModal({
         <div className="p-2 sm:px-4 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
             <Lightbulb className="w-3 h-3 text-amber-500" />
-            Suggested:
+            Quick Ideas:
           </span>
           {suggestedPrompts.map((q, i) => (
             <button
@@ -753,18 +932,17 @@ export function AIChatbotModal({
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 maxLength={4000}
-                placeholder={
-                  isBrand
-                    ? "Ask about influencer outreach, Reel concepts, ad copy, campaigns... (Shift+Enter for new line)"
-                    : "Ask for Reel scripts, hooks, calendars, brand pitch letters... (Shift+Enter for new line)"
-                }
+                placeholder={currentStrings.inputPlaceholder}
+                dir={activeDir}
                 disabled={loading}
-                aria-label="Type your message"
-                className="w-full px-4 py-3 bg-transparent text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
+                aria-label={currentStrings.inputPlaceholder}
+                className={`w-full px-4 py-3 bg-transparent text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed ${
+                  activeDir === "rtl" ? "text-right" : "text-left"
+                }`}
               />
               <div className="px-3 pb-1.5 flex items-center justify-between text-[10px] text-slate-400">
                 <span className="hidden sm:inline">
-                  Press <kbd className="px-1 py-0.5 rounded bg-slate-200/70 font-mono text-[9px]">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-slate-200/70 font-mono text-[9px]">Shift+Enter</kbd> for newline
+                  {currentStrings.escrowNotice}
                 </span>
                 <span className="ml-auto">{input.length}/4000</span>
               </div>
@@ -774,7 +952,8 @@ export function AIChatbotModal({
               <button
                 type="button"
                 onClick={handleStop}
-                aria-label="Stop generating response"
+                aria-label={currentStrings.stopButton}
+                title={currentStrings.stopButton}
                 className="p-3.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-md transition cursor-pointer flex items-center justify-center shrink-0 mb-2"
               >
                 <Square className="w-4 h-4 fill-white" />
@@ -783,10 +962,11 @@ export function AIChatbotModal({
               <button
                 type="submit"
                 disabled={!input.trim()}
-                aria-label="Send message"
+                aria-label={currentStrings.sendButton}
+                title={currentStrings.sendButton}
                 className="p-3.5 rounded-2xl bg-indigo-600 text-white font-semibold shadow-md hover:bg-indigo-700 disabled:opacity-40 transition cursor-pointer flex items-center justify-center shrink-0 mb-2"
               >
-                <Send className="w-4 h-4" />
+                <Send className={`w-4 h-4 ${activeDir === "rtl" ? "rotate-180" : ""}`} />
               </button>
             )}
           </div>

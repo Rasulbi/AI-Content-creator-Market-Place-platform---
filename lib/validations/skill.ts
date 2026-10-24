@@ -1,10 +1,18 @@
 import { z } from "zod";
 
-export const claimSkillSchema = z.object({
-  skill_id: z.string().uuid("Invalid skill ID"),
-  evidence_text: z.string().trim().max(2000, "Evidence text cannot exceed 2000 characters").optional().nullable(),
-  evidence_url: z.string().url("Must be a valid URL").optional().nullable(),
-});
+export const claimSkillSchema = z
+  .object({
+    skill_id: z.string().uuid("Invalid skill ID").optional(),
+    skill_name: z.string().trim().min(2, "Skill name must be at least 2 characters").max(100).optional(),
+    category: z.string().trim().min(2).default("AI Creative Discipline"),
+    status: z.enum(["claimed", "portfolio_evidence"]).default("claimed"),
+    evidence_text: z.string().trim().max(2000, "Evidence text cannot exceed 2000 characters").optional().nullable(),
+    evidence_url: z.string().url("Must be a valid URL").optional().nullable(),
+  })
+  .refine((data) => Boolean(data.skill_id || (data.skill_name && data.skill_name.trim().length >= 2)), {
+    message: "Either skill_id or skill_name (at least 2 characters) must be provided",
+    path: ["skill_id"],
+  });
 
 export type ClaimSkillInput = z.infer<typeof claimSkillSchema>;
 

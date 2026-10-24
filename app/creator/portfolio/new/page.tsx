@@ -26,6 +26,7 @@ import {
   X,
   Layers,
   Wand2,
+  AlertCircle,
 } from "lucide-react";
 
 const SAMPLE_MEDIA_PRESETS = [
@@ -73,6 +74,7 @@ export default function AddPortfolioProjectPage() {
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -112,51 +114,105 @@ export default function AddPortfolioProjectPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    setErrorMessage(null);
+
+    // 1. Validate title constraints (trimmed 3-200 characters)
+    const trimmedTitle = title.trim();
+    if (trimmedTitle.length < 3 || trimmedTitle.length > 200) {
+      setErrorMessage("Title must be between 3 and 200 characters.");
+      return;
+    }
+
+    // 2. Validate description constraints (trimmed 10-2500 characters)
+    const trimmedDesc = description.trim();
+    if (trimmedDesc.length < 10 || trimmedDesc.length > 2500) {
+      setErrorMessage("Description must be between 10 and 2500 characters.");
+      return;
+    }
+
+    // 3. Enforce at least one valid AI tool without silent substitution
+    if (selectedTools.length === 0) {
+      setErrorMessage("Select or add at least 1 AI tool used.");
+      return;
+    }
 
     setIsSubmitting(true);
 
-    const newProject: Omit<PortfolioProject, "id"> = {
-      title: title.trim(),
-      description: description.trim(),
-      brand: brand.trim() || "Independent Creation",
-      category,
-      contentType,
-      toolsUsed: selectedTools.length > 0 ? selectedTools : ["Generative Studio Tools"],
-      image: mediaUrl,
-      results: results.trim() || "Organic engagement campaign asset with verified prompt logs.",
-      engagement: "8.5% Engagement Rate",
-      reach: "1.2M Total Reach",
-      prompt: prompt.trim() || "Cinematic diffusion generation with calibrated lighting parameters and high temporal consistency.",
-      processEvidence: processEvidence.trim() || "1. Concept ideation & prompt optimization. 2. Generative passes. 3. Color grading and audio mastering.",
-      aspectRatio,
-      mediaType: "image",
-      skillsTagged: selectedSkills,
-    };
+    // Attempt persistent database save via backend API route
+    try {
+      const validMediaUrl = mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")
+        ? mediaUrl
+        : `https://example.com${mediaUrl.startsWith("/") ? "" : "/"}${mediaUrl}`;
 
-    const updated = addCreatorPortfolio(creator.id, newProject);
-
-    // Also link associated skills in Skill Passport to upgrade them to Portfolio Evidence!
-    if (updated && updated.portfolio && updated.portfolio.length > 0) {
-      const createdProject = updated.portfolio[0];
-      selectedSkills.forEach((skill) => {
-        linkProjectToSkill(
-          creator.id,
-          skill,
-          createdProject.id,
-          `Backed by newly added portfolio project '${createdProject.title}' with prompt & workflow logs.`
-        );
+      const res = await fetch("/api/v1/portfolio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          description: trimmedDesc,
+          content_type: contentType,
+          tools_used: selectedTools,
+          media_url: validMediaUrl,
+          prompt: prompt.trim() || undefined,
+          process_evidence: processEvidence.trim() || undefined,
+          linked_skill_ids: [],
+          metrics: { engagement: results.trim() || "8.5% Engagement", reach: "1.2M Total Reach" },
+        }),
       });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setErrorMessage(json.error || `Server rejected project creation (HTTP ${res.status}).`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Display success only after the server confirms success
+      const newProject: Omit<PortfolioProject, "id"> = {
+        title: trimmedTitle,
+        description: trimmedDesc,
+        brand: brand.trim() || "Independent Creation",
+        category,
+        contentType,
+        toolsUsed: selectedTools,
+        image: mediaUrl,
+        results: results.trim() || "Organic engagement campaign asset with verified prompt logs.",
+        engagement: "8.5% Engagement Rate",
+        reach: "1.2M Total Reach",
+        prompt: prompt.trim() || "Cinematic diffusion generation with calibrated lighting parameters.",
+        processEvidence: processEvidence.trim() || "1. Concept ideation. 2. Generative passes. 3. Mastering.",
+        aspectRatio,
+        mediaType: "image",
+        skillsTagged: selectedSkills,
+      };
+
+      const updated = addCreatorPortfolio(creator.id, newProject);
+
+      // Link associated skills in Skill Passport
+      if (updated && updated.portfolio && updated.portfolio.length > 0) {
+        const createdProject = updated.portfolio[0];
+        selectedSkills.forEach((skill) => {
+          linkProjectToSkill(
+            creator.id,
+            skill,
+            createdProject.id,
+            `Backed by newly added portfolio project '${createdProject.title}' with prompt & workflow logs.`
+          );
+        });
+      }
+
+      setIsSuccess(true);
+      setTimeout(() => {
+        router.push("/creator/portfolio");
+      }, 1500);
+    } catch (e: any) {
+      setErrorMessage(e?.message || "Network error while saving portfolio project. Please retry.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
-    setIsSuccess(true);
-
-    setTimeout(() => {
-      router.push("/creator/portfolio");
-    }, 1500);
   };
 
   return (
@@ -187,6 +243,13 @@ export default function AddPortfolioProjectPage() {
           </p>
         </div>
 
+        {errorMessage && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 animate-fadeIn">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span className="font-semibold">{errorMessage}</span>
+          </div>
+        )}
+
         {isSuccess && (
           <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 animate-fadeIn">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -210,12 +273,17 @@ export default function AddPortfolioProjectPage() {
               </CardHeader>
               <CardContent className="pt-5 space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Project Title *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Project Title *
+                    </label>
+                    <span className="text-[10px] text-slate-400">3–200 characters</span>
+                  </div>
                   <input
                     type="text"
                     required
+                    minLength={3}
+                    maxLength={200}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="e.g. Botanical Facial Serum 14-Day Hydration Story"
@@ -258,15 +326,20 @@ export default function AddPortfolioProjectPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Description *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Description *
+                    </label>
+                    <span className="text-[10px] text-slate-400">10–2500 characters</span>
+                  </div>
                   <textarea
                     rows={3}
                     required
+                    minLength={10}
+                    maxLength={2500}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Briefly describe the campaign objective, visual aesthetic, and creative hook..."
+                    placeholder="Briefly describe the campaign objective, visual aesthetic, and creative hook (minimum 10 characters)..."
                     className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-blue-500"
                   />
                 </div>

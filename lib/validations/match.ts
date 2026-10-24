@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const inviteCreatorSchema = z.object({
   campaign_id: z.string().uuid("Invalid campaign ID"),
-  creator_profile_id: z.string().uuid("Invalid creator profile ID"),
+  creator_profile_id: z.string().trim().min(1, "Creator profile identifier is required"),
   proposal_notes: z.string().trim().max(2000).optional().nullable(),
 });
 

@@ -342,41 +342,139 @@ CREATE TRIGGER trg_reviews_updated_at BEFORE UPDATE ON public.reviews FOR EACH R
 
 -- Trigger: Automatically insert a row in public.users on auth.users creation
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
-    user_role_val user_role;
+    user_role_val public.user_role;
+    raw_user_role TEXT;
+    raw_app_role TEXT;
     full_name_val TEXT;
     avatar_val TEXT;
+    company_val TEXT;
+    category_val TEXT;
+    raw_slug TEXT;
     assigned_slug TEXT;
 BEGIN
-    -- Determine role from raw user metadata or default to creator
-    user_role_val := COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'creator'::user_role);
-    full_name_val := COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1));
-    avatar_val := NEW.raw_user_meta_data->>'avatar_url';
+    raw_user_role := lower(trim(COALESCE(NEW.raw_user_meta_data->>'role', '')));
+    raw_app_role  := lower(trim(COALESCE(NEW.raw_app_meta_data->>'role', '')));
 
-    INSERT INTO public.users (id, email, role, full_name, avatar_url)
-    VALUES (NEW.id, NEW.email, user_role_val, full_name_val, avatar_val)
+    -- SECURITY HARDENING: 'admin' role can ONLY originate from server-managed raw_app_meta_data
+    IF raw_app_role = 'admin' THEN
+        user_role_val := 'admin'::public.user_role;
+    ELSIF raw_user_role = 'brand' OR raw_app_role = 'brand' THEN
+        user_role_val := 'brand'::public.user_role;
+    ELSE
+        -- Default to creator (strictly downgrades any malicious 'admin' in client-supplied raw_user_meta_data)
+        user_role_val := 'creator'::public.user_role;
+    END IF;
+
+    -- Extract full name with clean fallback
+    full_name_val := COALESCE(
+        NULLIF(trim(NEW.raw_user_meta_data->>'full_name'), ''),
+        NULLIF(trim(NEW.raw_user_meta_data->>'name'), ''),
+        NULLIF(trim(split_part(NEW.email, '@', 1)), ''),
+        'Creator User'
+    );
+
+    -- Extract avatar with role-specific default
+    avatar_val := COALESCE(
+        NULLIF(trim(NEW.raw_user_meta_data->>'avatar_url'), ''),
+        NULLIF(trim(NEW.raw_user_meta_data->>'picture'), ''),
+        CASE
+            WHEN user_role_val = 'brand' THEN '/images/brand-user.jpg'
+            ELSE '/images/anjali.jpg'
+        END
+    );
+
+    company_val := NULLIF(trim(NEW.raw_user_meta_data->>'company_name'), '');
+    category_val := COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'category'), ''), 'Beauty & Skincare');
+
+    -- Insert into public.users
+    INSERT INTO public.users (
+        id,
+        email,
+        role,
+        full_name,
+        avatar_url,
+        company_name,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.email, NEW.id::text || '@placeholder.email'),
+        user_role_val,
+        full_name_val,
+        avatar_val,
+        company_val,
+        COALESCE(NEW.created_at, timezone('utc'::text, now())),
+        timezone('utc'::text, now())
+    )
     ON CONFLICT (id) DO UPDATE
     SET email = EXCLUDED.email,
-        full_name = EXCLUDED.full_name;
+        full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), public.users.full_name),
+        avatar_url = COALESCE(EXCLUDED.avatar_url, public.users.avatar_url),
+        company_name = COALESCE(EXCLUDED.company_name, public.users.company_name),
+        updated_at = timezone('utc'::text, now());
 
-    -- If the new user is a creator, automatically initialize an empty creator_profile
+    -- If creator, insert into public.creator_profiles (WITHOUT avatar_url column)
     IF user_role_val = 'creator' THEN
-        assigned_slug := lower(regexp_replace(full_name_val, '[^a-zA-Z0-9]+', '-', 'g')) || '-' || substring(NEW.id::text from 1 for 6);
-        INSERT INTO public.creator_profiles (user_id, slug, name, bio, avatar_url)
+        raw_slug := lower(regexp_replace(full_name_val, '[^a-zA-Z0-9]+', '-', 'g'));
+        raw_slug := trim(both '-' from raw_slug);
+        IF raw_slug = '' OR raw_slug IS NULL THEN
+            raw_slug := 'creator';
+        END IF;
+        assigned_slug := raw_slug || '-' || substring(replace(NEW.id::text, '-', '') from 1 for 8);
+
+        INSERT INTO public.creator_profiles (
+            user_id,
+            slug,
+            name,
+            bio,
+            category,
+            experience_years,
+            experience_level,
+            availability,
+            hourly_rate,
+            min_budget,
+            max_budget,
+            ai_tools,
+            platforms,
+            created_at,
+            updated_at
+        )
         VALUES (
             NEW.id,
             assigned_slug,
             full_name_val,
             'AI Content Creator specializing in generative video, imagery, and prompt workflows.',
-            avatar_val
+            category_val,
+            1.0,
+            'intermediate',
+            'available',
+            3500.00,
+            15000.00,
+            50000.00,
+            ARRAY['Midjourney v6', 'Runway Gen-3', 'CapCut Pro']::TEXT[],
+            ARRAY['Instagram Reels', 'YouTube Shorts']::TEXT[],
+            COALESCE(NEW.created_at, timezone('utc'::text, now())),
+            timezone('utc'::text, now())
         )
-        ON CONFLICT (user_id) DO NOTHING;
+        ON CONFLICT (user_id) DO UPDATE
+        SET name = COALESCE(NULLIF(EXCLUDED.name, ''), public.creator_profiles.name),
+            updated_at = timezone('utc'::text, now());
     END IF;
 
     RETURN NEW;
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE WARNING 'handle_new_auth_user error: % (SQLSTATE: %)', SQLERRM, SQLSTATE;
+        RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -429,35 +527,88 @@ CREATE TRIGGER trg_on_review_created
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.current_user_role()
-RETURNS user_role AS $$
+RETURNS user_role
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
     SELECT role FROM public.users WHERE id = auth.uid();
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
 CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'
     );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
 CREATE OR REPLACE FUNCTION public.is_creator()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'creator'
     );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
 CREATE OR REPLACE FUNCTION public.is_brand()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'brand'
     );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
 CREATE OR REPLACE FUNCTION public.get_current_creator_profile_id()
-RETURNS UUID AS $$
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
     SELECT id FROM public.creator_profiles WHERE user_id = auth.uid();
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
+
+-- Trigger function: Prevent users from modifying their own role or ID
+CREATE OR REPLACE FUNCTION public.protect_user_role_immutability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+BEGIN
+    IF NEW.id <> OLD.id THEN
+        RAISE EXCEPTION 'Modifying user ID is not permitted.';
+    END IF;
+
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
+        IF current_setting('request.jwt.claim.role', true) <> 'service_role' AND NOT public.is_admin() THEN
+            RAISE EXCEPTION 'Privilege escalation blocked: Changing user role is forbidden.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_protect_user_role ON public.users;
+CREATE TRIGGER trg_protect_user_role
+    BEFORE UPDATE ON public.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.protect_user_role_immutability();
 
 -- =============================================================================
 -- 7. ROW LEVEL SECURITY (RLS) POLICIES
@@ -484,12 +635,15 @@ CREATE POLICY "Users: public read for authenticated"
     TO authenticated
     USING (true);
 
--- Users can update only their own profile
+-- Users can update only their own profile (role immutability strictly enforced)
 CREATE POLICY "Users: update own profile"
     ON public.users FOR UPDATE
     TO authenticated
     USING (id = auth.uid())
-    WITH CHECK (id = auth.uid());
+    WITH CHECK (
+        id = auth.uid()
+        AND (role = (SELECT u.role FROM public.users u WHERE u.id = auth.uid()) OR public.is_admin())
+    );
 
 -- Admins can do anything
 CREATE POLICY "Users: admin full access"
@@ -870,3 +1024,93 @@ CREATE POLICY "Storage: admin full access"
     ON storage.objects FOR ALL
     TO authenticated
     USING (public.is_admin());
+
+-- =============================================================================
+-- 12. SAVED AI CONTENT (STUDIO)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.saved_ai_content (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    concept TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    caption TEXT NOT NULL,
+    hashtags TEXT[] NOT NULL DEFAULT '{}'::TEXT[],
+    call_to_action TEXT NOT NULL,
+    video_script_outline JSONB DEFAULT '[]'::JSONB,
+    niche TEXT NOT NULL DEFAULT 'General',
+    platform TEXT NOT NULL DEFAULT 'Instagram Reels',
+    content_goal TEXT,
+    is_favorite BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.saved_ai_content ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own saved AI content"
+    ON public.saved_ai_content FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own saved AI content"
+    ON public.saved_ai_content FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own saved AI content"
+    ON public.saved_ai_content FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own saved AI content"
+    ON public.saved_ai_content FOR DELETE
+    USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_saved_ai_content_user_id ON public.saved_ai_content(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_saved_ai_content_platform ON public.saved_ai_content(platform);
+
+DROP TRIGGER IF EXISTS trg_saved_ai_content_updated_at ON public.saved_ai_content;
+CREATE TRIGGER trg_saved_ai_content_updated_at
+    BEFORE UPDATE ON public.saved_ai_content
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
+
+-- =============================================================================
+-- 13. CAMPAIGN VERIFICATIONS (AI CREATOR VERIFICATION AUDIT HISTORY)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.campaign_verifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    brand_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    brand_name TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'Instagram',
+    target_audience TEXT,
+    budget TEXT,
+    deadline TEXT,
+    verifications_count INTEGER NOT NULL DEFAULT 0,
+    verifications_data JSONB NOT NULL DEFAULT '[]'::JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.campaign_verifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Brands can view own creator verification audits"
+    ON public.campaign_verifications FOR SELECT
+    USING (auth.uid() = brand_id);
+
+CREATE POLICY "Brands can insert own creator verification audits"
+    ON public.campaign_verifications FOR INSERT
+    WITH CHECK (auth.uid() = brand_id);
+
+CREATE POLICY "Brands can delete own creator verification audits"
+    ON public.campaign_verifications FOR DELETE
+    USING (auth.uid() = brand_id);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_verifications_brand_id ON public.campaign_verifications(brand_id, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_campaign_verifications_updated_at ON public.campaign_verifications;
+CREATE TRIGGER trg_campaign_verifications_updated_at
+    BEFORE UPDATE ON public.campaign_verifications
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();

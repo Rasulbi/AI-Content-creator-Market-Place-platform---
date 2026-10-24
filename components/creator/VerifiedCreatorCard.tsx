@@ -141,11 +141,24 @@ export function VerifiedCreatorCard({
                 </span>
               )}
 
-              {/* AI-Audited tag */}
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                <Sparkles className="w-3 h-3 text-indigo-500" />
-                AI-Audited
-              </span>
+              {/* Provenance Tag */}
+              {item.isFallback || item.engine === "heuristic_fallback" ? (
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200"
+                  title="Audited using deterministic rule-based verification heuristics"
+                >
+                  <FileCheck className="w-3 h-3 text-amber-600" />
+                  Rule-Based Audit
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200"
+                  title={`Model-generated evaluation via ${item.modelUsed}`}
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-500" />
+                  AI Model ({item.modelUsed})
+                </span>
+              )}
             </div>
 
             <p className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
@@ -449,8 +462,17 @@ export function VerifiedCreatorCard({
                     <span>Audit Timestamp: <strong>{formattedTimestamp}</strong></span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Audit Model: <strong>{item.modelUsed || "Ensemble Validator"}</strong></span>
+                    {item.isFallback || item.engine === "heuristic_fallback" ? (
+                      <>
+                        <FileCheck className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Audit Engine: <strong>Heuristic Audit Engine (Rule-Based)</strong></span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Audit Model: <strong>{item.modelUsed}</strong></span>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Info className="w-3.5 h-3.5 text-slate-400" />

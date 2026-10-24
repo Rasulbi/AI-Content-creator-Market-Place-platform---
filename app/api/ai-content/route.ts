@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 import { extractJSON } from "@/lib/ai/json-parser";
 import { aiLogger } from "@/lib/ai/logger";
 import { aiService } from "@/lib/ai/ai-service";
+import { getAIProvider } from "@/lib/ai/provider-factory";
 import { ContentSuggestionsOutput } from "@/lib/ai/types";
 
 /**
@@ -126,15 +127,16 @@ Respond ONLY with valid JSON strictly adhering to this structure:
           data: parsedData,
           provider: "openai",
           model,
+          isFallback: false,
         });
       } catch (openAiError: unknown) {
         const error = openAiError as Error;
-        aiLogger.warn("OpenAI API call failed, falling back to deterministic engine", {
+        aiLogger.warn("OpenAI API call failed, falling back to configured provider or heuristic engine", {
           message: error.message,
         });
 
-        // Safe fallback to deterministic heuristic generator so user is never blocked
-        const fallbackData = await aiService.generateContentSuggestions({
+        // Fallback to configured AI provider (e.g. Gemini) or heuristic generator
+        const contentData = await aiService.generateContentSuggestions({
           niche: validated.niche,
           targetAudience: validated.targetAudience,
           platform: validated.platform,
@@ -143,18 +145,25 @@ Respond ONLY with valid JSON strictly adhering to this structure:
           keywords: validated.keywords,
         });
 
+        const isModel = !contentData.isFallback && contentData.engine === "ai_model";
+        const configuredProvider = getAIProvider();
+
         return NextResponse.json({
           success: true,
-          data: fallbackData,
-          provider: "heuristic-fallback",
-          warning: "Live OpenAI API request encountered an error; displayed verified fallback suggestions.",
+          data: contentData,
+          provider: isModel ? configuredProvider.id : "heuristic-fallback",
+          model: isModel ? configuredProvider.model : undefined,
+          isFallback: !isModel,
+          warning: isModel
+            ? `OpenAI API call failed; generated via configured ${configuredProvider.name}.`
+            : "Live AI generation encountered an error; displayed verified fallback suggestions.",
         });
       }
     }
 
-    // 2. Fallback when OPENAI_API_KEY is not yet configured in .env.local
-    aiLogger.info("OPENAI_API_KEY is not configured in .env.local. Using fallback heuristic engine.");
-    const fallbackData = await aiService.generateContentSuggestions({
+    // 2. When OPENAI_API_KEY is not configured, generate via the configured provider (e.g. Gemini) or heuristic fallback
+    aiLogger.info("Generating content suggestions via configured provider / aiService");
+    const contentData = await aiService.generateContentSuggestions({
       niche: validated.niche,
       targetAudience: validated.targetAudience,
       platform: validated.platform,
@@ -163,11 +172,21 @@ Respond ONLY with valid JSON strictly adhering to this structure:
       keywords: validated.keywords,
     });
 
+    const isModel = !contentData.isFallback && contentData.engine === "ai_model";
+    const configuredProvider = getAIProvider();
+
     return NextResponse.json({
       success: true,
-      data: fallbackData,
-      provider: "heuristic-fallback",
-      message: "Generated via offline heuristic engine. Add OPENAI_API_KEY to .env.local to enable live OpenAI generation.",
+      data: contentData,
+      provider: isModel ? configuredProvider.id : "heuristic-fallback",
+      model: isModel ? configuredProvider.model : undefined,
+      isFallback: !isModel,
+      ...(isModel
+        ? {}
+        : {
+            message:
+              "Generated via heuristic fallback engine. Set OPENAI_API_KEY or GEMINI_API_KEY in .env.local to enable live model generation.",
+          }),
     });
   } catch (err: unknown) {
     if (err instanceof ZodError) {

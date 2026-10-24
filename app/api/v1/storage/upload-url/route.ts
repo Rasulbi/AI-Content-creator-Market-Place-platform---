@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSignedUploadUrl, getPublicStorageUrl } from "@/lib/supabase/storage-helpers";
+import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { uploadUrlRequestSchema } from "@/lib/validations";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json(
+        { error: "Storage service (Supabase) is not configured." },
+        { status: 503 }
+      );
+    }
+
     const body = await request.json();
     const validated = uploadUrlRequestSchema.parse(body);
 

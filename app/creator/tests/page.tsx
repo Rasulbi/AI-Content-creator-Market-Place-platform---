@@ -46,6 +46,50 @@ export default function SkillTestsPage() {
       setSubmissions(getTestSubmissions(matched.id));
     }
 
+    async function fetchDbSubmissions() {
+      try {
+        const queryParam = user?.id ? `?creatorId=${encodeURIComponent(user.id)}` : "";
+        const res = await fetch(`/api/v1/tests/submissions${queryParam}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.data) && json.data.length > 0) {
+            const mappedDbSubs: TestSubmissionRecord[] = json.data.map((sub: any) => ({
+              id: sub.id,
+              testId: sub.skill_tests?.title || sub.test_id,
+              creatorId: matched?.id || "ananya-rao",
+              score: Number(sub.score) || 85,
+              passed: sub.status === "passed",
+              submittedAt: sub.submitted_at,
+              quizScore: Math.round(Number(sub.score) || 85),
+              promptScore: Math.round(Number(sub.score) || 85),
+              feedback: sub.feedback || "Benchmark evaluation completed.",
+              certificateId:
+                sub.answers?.__certificate?.certificateId ||
+                sub.answers?.certificateId ||
+                `CERT-${sub.id.substring(0, 8).toUpperCase()}`,
+            }));
+
+            setSubmissions((prev) => {
+              const ids = new Set(mappedDbSubs.map((m) => m.id));
+              // Local submissions not confirmed by server database cannot be displayed as verified passes
+              const unmapped = prev
+                .filter((p) => !ids.has(p.id))
+                .map((p) => ({
+                  ...p,
+                  passed: false,
+                  certificateId: "",
+                  feedback: "Local draft - pending authoritative server verification.",
+                }));
+              return [...mappedDbSubs, ...unmapped];
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Submissions DB sync notice:", err);
+      }
+    }
+    fetchDbSubmissions();
+
     const handleUpdate = () => {
       const refreshed = getStoredCreators();
       const current = user ? getCreatorById(user.id) || refreshed[0] : refreshed[0];
@@ -54,6 +98,7 @@ export default function SkillTestsPage() {
         setPassportItems(getStoredSkillPassport(current.id));
         setSubmissions(getTestSubmissions(current.id));
       }
+      fetchDbSubmissions();
     };
 
     window.addEventListener("skill-passport-updated", handleUpdate);
@@ -130,10 +175,10 @@ export default function SkillTestsPage() {
               <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   categoryFilter === cat
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50"
+                    ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs"
+                    : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
                 {cat}

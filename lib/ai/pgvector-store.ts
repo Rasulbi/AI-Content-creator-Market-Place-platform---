@@ -29,10 +29,56 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+export const TARGET_EMBEDDING_DIM = 768;
+
 /**
- * Generates semantic embedding vector (768 dimensions standard for pgvector schema)
- * Supports OpenRouter embeddings API when configured; uses deterministic 768-dim
- * normalized semantic vectors when offline, unconfigured, or using xAI Grok.
+ * Deterministic unit-normalized semantic vector generator for offline development and testing.
+ */
+export function generateDeterministicVector(text: string, dim: number = TARGET_EMBEDDING_DIM): number[] {
+  const vector: number[] = new Array(dim).fill(0);
+  const words = text.toLowerCase().split(/\s+/);
+  for (let i = 0; i < words.length; i++) {
+    let hash = 0;
+    for (let c = 0; c < words[i].length; c++) {
+      hash = (hash << 5) - hash + words[i].charCodeAt(c);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % dim;
+    vector[idx] += 1;
+  }
+  const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return vector.map((v) => v / norm);
+}
+
+/**
+ * Checks whether an authentic live embedding provider is configured in environment variables.
+ */
+export function isRealEmbeddingProviderConfigured(): boolean {
+  const provider = (process.env.AI_PROVIDER || "openrouter").toLowerCase().trim();
+  if (provider === "openrouter") {
+    const key = process.env.OPENROUTER_API_KEY?.trim();
+    return Boolean(key && !key.startsWith("paste-") && !key.includes("your-") && key.length > 15);
+  }
+  if (provider === "gemini" || provider === "google") {
+    const key = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)?.trim();
+    return Boolean(key && !key.startsWith("paste-") && !key.includes("your-") && key.length > 15);
+  }
+  if (provider === "openai") {
+    const key = process.env.OPENAI_API_KEY?.trim();
+    return Boolean(key && !key.startsWith("paste-") && !key.includes("your-") && key.length > 15);
+  }
+  return false;
+}
+
+/**
+ * Generates semantic embedding vector (768 dimensions standard for pgvector schema).
+ * Aligned with Google Gemini text-embedding-004 and OpenRouter BGE-base standard (768 dims).
+ *
+ * Strict Dimension & Orthogonality Rules:
+ * 1. Modulo folding is prohibited: wrapping dimensions destructively interferes with orthogonal latent axes.
+ * 2. Prefix slicing is only permitted for certified Matryoshka Representation Learning (MRL) models (e.g. text-embedding-3).
+ * 3. Mismatched non-MRL models throw an explicit Error with diagnostic logging to prevent corrupted stored embeddings.
+ * 4. Deterministic vectors are only generated in offline/testing mode when no live provider is configured.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const provider = (process.env.AI_PROVIDER || "openrouter").toLowerCase().trim();
@@ -45,10 +91,27 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   if (provider === "grok") {
     // xAI Grok does not have a public vector embeddings endpoint
-    aiLogger.info("xAI Grok does not provide vector embeddings. Using deterministic 768-dim normalized vector.");
-  } else if (isValidOpenRouterKey) {
+    aiLogger.info("xAI Grok does not provide vector embeddings. Skipping neural vector generation.");
+    return generateDeterministicVector(text, TARGET_EMBEDDING_DIM);
+  }
+
+  if (isValidOpenRouterKey) {
     try {
-      const embeddingModel = process.env.AI_EMBEDDING_MODEL?.trim() || "baai/bge-large-en-v1.5";
+      const embeddingModel = process.env.AI_EMBEDDING_MODEL?.trim() || "baai/bge-base-en-v1.5";
+      const isMrlModel =
+        embeddingModel.toLowerCase().includes("text-embedding-3") ||
+        embeddingModel.toLowerCase().includes("bge-m3");
+
+      const requestBody: Record<string, any> = {
+        model: embeddingModel,
+        input: text,
+      };
+
+      // Native MRL models support requesting reduced target dimensions directly from the API
+      if (isMrlModel) {
+        requestBody.dimensions = TARGET_EMBEDDING_DIM;
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
         method: "POST",
         headers: {
@@ -57,50 +120,63 @@ export async function generateEmbedding(text: string): Promise<number[]> {
           "HTTP-Referer": "https://ai-creator-marketplace.local",
           "X-Title": "AI Content Creator Marketplace",
         },
-        body: JSON.stringify({
-          model: embeddingModel,
-          input: text,
-        }),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(15000),
       });
 
-      if (response.ok) {
-        const json = await response.json();
-        const rawVector = json.data?.[0]?.embedding;
-        if (Array.isArray(rawVector) && rawVector.length > 0) {
-          if (rawVector.length === 768) {
-            return rawVector;
-          }
-          const projected = new Array(768).fill(0);
-          for (let i = 0; i < rawVector.length; i++) {
-            projected[i % 768] += rawVector[i];
-          }
-          const norm = Math.sqrt(projected.reduce((sum, v) => sum + v * v, 0)) || 1;
-          return projected.map((v) => v / norm);
-        }
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        aiLogger.error("OpenRouter embedding API error", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+        });
+        throw new Error(`OpenRouter embedding API returned HTTP ${response.status}: ${errorText || response.statusText}`);
       }
-    } catch (err) {
-      aiLogger.warn("OpenRouter embedding call failed, falling back to deterministic vector", {
-        error: err,
+
+      const json = await response.json();
+      const rawVector = json.data?.[0]?.embedding;
+
+      if (!Array.isArray(rawVector) || rawVector.length === 0) {
+        throw new Error("OpenRouter embedding API returned an empty or malformed vector payload");
+      }
+
+      if (rawVector.length === TARGET_EMBEDDING_DIM) {
+        const norm = Math.sqrt(rawVector.reduce((sum, v) => sum + v * v, 0)) || 1;
+        return rawVector.map((v) => v / norm);
+      }
+
+      if (isMrlModel && rawVector.length > TARGET_EMBEDDING_DIM) {
+        // Certified Matryoshka Representation Learning supports prefix truncation + L2 renormalization
+        const sliced = rawVector.slice(0, TARGET_EMBEDDING_DIM);
+        const norm = Math.sqrt(sliced.reduce((sum, v) => sum + v * v, 0)) || 1;
+        return sliced.map((v) => v / norm);
+      }
+
+      // Non-MRL model dimension mismatch:
+      // Modulo folding is prohibited because it wraps non-parallel semantic dimensions, destroying latent orthogonality.
+      // Throw an explicit diagnostic error rather than producing misleading semantic search or corrupting stored vectors.
+      aiLogger.error(
+        "Incompatible embedding dimensions returned by model without certified MRL reduction support",
+        {
+          model: embeddingModel,
+          receivedDimension: rawVector.length,
+          expectedDimension: TARGET_EMBEDDING_DIM,
+        }
+      );
+      throw new Error(
+        `Incompatible embedding dimension: model '${embeddingModel}' returned ${rawVector.length} dimensions, but schema requires ${TARGET_EMBEDDING_DIM}. Non-MRL dimension reduction is unsupported; vector rejected to protect semantic integrity.`
+      );
+    } catch (err: any) {
+      aiLogger.error("Embedding provider request failed", {
+        error: err?.message || err,
       });
+      throw err;
     }
   }
 
   // Deterministic 768-dimension synthetic embedding generator for local dev / offline tests
-  const vector: number[] = new Array(768).fill(0);
-  const words = text.toLowerCase().split(/\s+/);
-  for (let i = 0; i < words.length; i++) {
-    let hash = 0;
-    for (let c = 0; c < words[i].length; c++) {
-      hash = (hash << 5) - hash + words[i].charCodeAt(c);
-      hash |= 0;
-    }
-    const idx = Math.abs(hash) % 768;
-    vector[idx] += 1;
-  }
-  // Normalize
-  const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
-  return vector.map((v) => v / norm);
+  return generateDeterministicVector(text, TARGET_EMBEDDING_DIM);
 }
 
 /**

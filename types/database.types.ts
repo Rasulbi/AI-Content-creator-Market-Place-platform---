@@ -598,9 +598,137 @@ export interface Database {
           }
         ];
       };
+      saved_ai_content: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          concept: string;
+          hook: string;
+          caption: string;
+          hashtags: string[];
+          call_to_action: string;
+          video_script_outline: Json;
+          niche: string;
+          platform: string;
+          content_goal: string | null;
+          is_favorite: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          concept: string;
+          hook: string;
+          caption: string;
+          hashtags?: string[];
+          call_to_action: string;
+          video_script_outline?: Json;
+          niche?: string;
+          platform?: string;
+          content_goal?: string | null;
+          is_favorite?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          concept?: string;
+          hook?: string;
+          caption?: string;
+          hashtags?: string[];
+          call_to_action?: string;
+          video_script_outline?: Json;
+          niche?: string;
+          platform?: string;
+          content_goal?: string | null;
+          is_favorite?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "saved_ai_content_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      campaign_verifications: {
+        Row: {
+          id: string;
+          brand_id: string;
+          brand_name: string;
+          product_name: string;
+          category: string;
+          platform: string;
+          target_audience: string | null;
+          budget: string | null;
+          deadline: string | null;
+          verifications_count: number;
+          verifications_data: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          brand_id: string;
+          brand_name: string;
+          product_name: string;
+          category: string;
+          platform?: string;
+          target_audience?: string | null;
+          budget?: string | null;
+          deadline?: string | null;
+          verifications_count?: number;
+          verifications_data?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          brand_id?: string;
+          brand_name?: string;
+          product_name?: string;
+          category?: string;
+          platform?: string;
+          target_audience?: string | null;
+          budget?: string | null;
+          deadline?: string | null;
+          verifications_count?: number;
+          verifications_data?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "campaign_verifications_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: {
-      [_ in never]: never;
+      public_user_profiles: {
+        Row: {
+          id: string;
+          full_name: string;
+          avatar_url: string | null;
+          role: UserRole;
+          company_name: string | null;
+          created_at: string;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       [_ in never]: never;

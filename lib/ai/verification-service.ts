@@ -343,8 +343,10 @@ export class VerificationService {
           matchExplanation: evalResult.matchExplanation,
           evidenceSources: evalResult.evidenceSources,
           verificationTimestamp: new Date().toISOString(),
-          modelUsed: this.provider.model,
-          isAIAssisted: true,
+          modelUsed: "Rule-Based Audit Engine",
+          isAIAssisted: false,
+          isFallback: true,
+          engine: "heuristic_fallback",
           portfolioCount: creator.portfolioCount,
           clientRating: creator.clientRating,
           reviewsCount: creator.reviewsCount,
@@ -360,7 +362,8 @@ export class VerificationService {
 
       // 4. AI-Enhanced Reasoning if provider is configured
       let engine: "ai_model" | "heuristic_fallback" = "heuristic_fallback";
-      let activeProviderName = "Deterministic Audit Engine";
+      let activeProviderName = "Heuristic Audit Engine";
+      let isFallback = true;
       let finalVerifications = initialVerifications;
 
       // Try active provider or fallback provider (e.g. Groq if OpenRouter has 0 credits)
@@ -410,12 +413,16 @@ For each creator, provide a refined 1-2 sentence evidence-backed explanation of 
                   ...item,
                   matchExplanation: matchedAI.matchExplanation,
                   modelUsed: prov.model,
+                  isAIAssisted: true,
+                  isFallback: false,
+                  engine: "ai_model" as const,
                 };
               }
               return item;
             });
             engine = "ai_model";
             activeProviderName = prov.name;
+            isFallback = false;
             break; // Successfully enhanced
           }
         } catch (err) {
@@ -457,7 +464,8 @@ For each creator, provide a refined 1-2 sentence evidence-backed explanation of 
         engine,
         provider: activeProviderName,
         timestamp: new Date().toISOString(),
-        isAIAssisted: true,
+        isAIAssisted: !isFallback,
+        isFallback,
       };
 
       return VerifyCreatorsOutputSchema.parse(output);

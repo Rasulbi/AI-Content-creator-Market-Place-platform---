@@ -5,14 +5,20 @@ import { Database } from "@/types/database.types";
 
 function resolveSupabaseUrl(url: string | undefined): string {
   if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
-    return url;
+    return url.trim().replace(/\/+$/, "");
   }
   return "https://placeholder-project.supabase.co";
 }
 
 function resolveSupabaseKey(key: string | undefined): string {
-  if (key && !key.startsWith("paste-") && key.length > 20) {
-    return key;
+  if (!key) return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder-key";
+  let cleaned = key.trim().replace(/^["']|["']$/g, "");
+  const prefix = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.";
+  if (cleaned.startsWith(prefix + prefix)) {
+    cleaned = cleaned.slice(prefix.length);
+  }
+  if (!cleaned.startsWith("paste-") && cleaned.length > 20) {
+    return cleaned;
   }
   return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder-key";
 }

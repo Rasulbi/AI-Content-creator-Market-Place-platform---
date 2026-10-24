@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./provider-interface";
 export * from "./json-parser";
+export * from "./gemini-provider";
 export * from "./openrouter-provider";
 export * from "./grok-provider";
 export * from "./provider-factory";
@@ -8,3 +9,4 @@ export * from "./scoring-engine";
 export * from "./logger";
 export * from "./pgvector-store";
 export * from "./ai-service";
+export * from "./chatbot-engine";

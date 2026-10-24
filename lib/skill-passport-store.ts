@@ -56,8 +56,6 @@ export interface TestQuestion {
   id: string;
   question: string;
   options: string[];
-  correctIndex: number;
-  explanation: string;
 }
 
 export interface SkillTest {
@@ -97,7 +95,8 @@ const PASSPORT_STORAGE_KEY = "ai_marketplace_skill_passport_v2";
 const SUBMISSIONS_STORAGE_KEY = "ai_marketplace_test_submissions_v2";
 
 // =========================================================================
-// PRESET AI BENCHMARK TESTS CATALOG
+// PRESET AI BENCHMARK TESTS CATALOG (Sanitized for Client Presentation)
+// NOTE: Authoritative answer keys are strictly housed in lib/server/skill-tests-data.ts
 // =========================================================================
 export const SKILL_TESTS_CATALOG: SkillTest[] = [
   {
@@ -124,9 +123,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
         question:
           "In Midjourney v6, which parameter modifier correctly locks the initial noise distribution for deterministic testing across iterations?",
         options: ["--chaos 0", "--seed <number>", "--repeat 1", "--stylize 0"],
-        correctIndex: 1,
-        explanation:
-          "--seed specifies the starting noise seed number, allowing repeatable results when testing minor prompt prompt changes.",
       },
       {
         id: "q2",
@@ -138,9 +134,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Resolution is automatically downscaled by half",
           "Generation time triples without visual change",
         ],
-        correctIndex: 1,
-        explanation:
-          "Excessive CFG scales over-constrain the latent space, leading to harsh contrast clipping, burned saturation, and edge artifacts.",
       },
       {
         id: "q3",
@@ -152,9 +145,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Using maximum --stylize 1000",
           "Repeating the word 'realistic' five times in the prompt header",
         ],
-        correctIndex: 1,
-        explanation:
-          "Specifying natural camera hardware, optical lens depth, and authentic imperfections like pores and film grain produces realistic skin textures without artificial sheen.",
       },
       {
         id: "q4",
@@ -166,9 +156,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "It flips the image colors to their inverted hex values",
           "It disables text encoding for faster renders",
         ],
-        correctIndex: 1,
-        explanation:
-          "Negative embeddings steer the latent trajectory away from unwanted concepts like extra limbs, blur, watermarks, or text artifacts.",
       },
     ],
   },
@@ -201,9 +188,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Exporting at lowest resolution to conceal changes",
           "Using maximum motion slider values (+10)",
         ],
-        correctIndex: 1,
-        explanation:
-          "Image-to-Video with reference keyframes and precise camera instructions provides the highest identity preservation in generative video.",
       },
       {
         id: "q2",
@@ -215,9 +199,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Selecting MP4 rather than MOV format",
           "Using aspect ratio 16:9",
         ],
-        correctIndex: 0,
-        explanation:
-          "Complex rapid kinematics often exceed the model's temporal coherence attention window, leading to morphing.",
       },
       {
         id: "q3",
@@ -229,9 +210,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Maximum speed 360 spin",
           "Static frame with strobe lighting",
         ],
-        correctIndex: 1,
-        explanation:
-          "Slow lateral tracking and fixed-pivot arc dollies maintain visual landmarks that keep the temporal latent space stable.",
       },
     ],
   },
@@ -264,9 +242,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "The audio file fails to generate",
           "The language automatically switches to Spanish",
         ],
-        correctIndex: 1,
-        explanation:
-          "Low stability introduces extreme vocal inflection and emotional dynamism, but can cause unstable artifacts or vocal cracks.",
       },
       {
         id: "q2",
@@ -278,9 +253,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "Compressed 64kbps WhatsApp voice note",
           "Speaker shouting in an echoing stadium",
         ],
-        correctIndex: 1,
-        explanation:
-          "Dry studio acoustics with high dynamic range and no reverb yield pristine training weights without noise contamination.",
       },
     ],
   },
@@ -308,9 +280,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
         question:
           "What is the industry benchmark for average 3-second hook retention on high-converting Instagram Reels and TikTok ads?",
         options: ["10% - 20%", "65% - 75%+", "30% - 40%", "99% - 100%"],
-        correctIndex: 1,
-        explanation:
-          "Top-performing direct response creatives maintain 65-75%+ retention past the 3-second hook to qualify high-intent viewers.",
       },
       {
         id: "q2",
@@ -322,9 +291,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "It guarantees 10 million organic views on day 1",
           "It eliminates the need for any scriptwriting",
         ],
-        correctIndex: 0,
-        explanation:
-          "Human presence provides trust and relatability, while high-production AI macro footage delivers premium brand polish.",
       },
     ],
   },
@@ -352,9 +318,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
         question:
           "What is the optimal denoising strength range for inpainting a product label without destroying the surrounding bottle geometry?",
         options: ["0.95 - 1.0", "0.35 - 0.55", "0.05 - 0.10", "1.50 - 2.0"],
-        correctIndex: 1,
-        explanation:
-          "Denoising strength between 0.35 and 0.55 provides enough latent flexibility for the new graphic while locking existing geometry.",
       },
       {
         id: "q2",
@@ -366,9 +329,6 @@ export const SKILL_TESTS_CATALOG: SkillTest[] = [
           "ControlNet Tile with random seed",
           "Color Inversion preprocessor",
         ],
-        correctIndex: 0,
-        explanation:
-          "Depth estimation (ZoeDepth/Midas) encodes true 3D spatial surfaces and angles, preventing flattened perspective distortion.",
       },
     ],
   },
@@ -755,6 +715,10 @@ export function recordTestPassedInPassport(
   testResult: SkillTestResult,
   customScore?: number
 ): SkillPassportItem {
+  if (!testResult || !testResult.passed || !testResult.certificateId) {
+    throw new Error("Cannot record test in passport: assessment has not been authoritatively passed by server.");
+  }
+
   const all = getAllPassportItems();
   const index = all.findIndex(
     (item) => item.creatorId === creatorId && item.skillName.toLowerCase() === associatedSkill.toLowerCase()

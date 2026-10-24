@@ -1,12 +1,22 @@
 import React from "react";
 import { notFound } from "next/navigation";
-import { CREATORS_DATA } from "@/lib/creators-data";
+import { Creator } from "@/lib/creators-data";
+import { DEMO_CREATORS } from "@/lib/demo-creators";
+import { getDatabaseCreatorById } from "@/lib/creators-catalog";
 import { CreatorProfileView } from "@/components/creator/CreatorProfileView";
 
 export function generateStaticParams() {
-  return CREATORS_DATA.map((creator) => ({
+  return DEMO_CREATORS.map((creator) => ({
     id: creator.id,
   }));
+}
+
+/**
+ * Resolves creator profile from live Supabase database first.
+ * Safely falls back to clearly labelled demo showcase profiles if unconfigured or not found.
+ */
+export async function resolveCreatorProfile(id: string): Promise<Creator | null> {
+  return getDatabaseCreatorById(id, { allowDemo: true });
 }
 
 export async function generateMetadata({
@@ -15,7 +25,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const creator = CREATORS_DATA.find((c) => c.id === id);
+  const creator = await resolveCreatorProfile(id);
 
   if (!creator) {
     return {
@@ -35,7 +45,7 @@ export default async function CreatorProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const creator = CREATORS_DATA.find((c) => c.id === id) || CREATORS_DATA[0];
+  const creator = await resolveCreatorProfile(id);
 
   if (!creator) {
     notFound();

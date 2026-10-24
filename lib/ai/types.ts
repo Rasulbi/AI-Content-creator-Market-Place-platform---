@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { SupportedLanguageCode, SupportedLanguageSchema } from "./multilingual";
+export type { SupportedLanguageCode };
 
 // ==========================================
 // 1. PORTFOLIO ANALYSIS SCHEMAS
@@ -92,6 +94,7 @@ export const CampaignAnalysisOutputSchema = z.object({
   }),
   deadline: z.string().describe("Target timeframe or turnaround e.g. 2 Weeks"),
   deliverables: z.array(z.string()).describe("Specific items expected e.g. 5 Instagram Reels"),
+  category: z.string().optional().describe("Campaign industry or niche category"),
   campaignRequirements: z.array(z.string()).describe("Summary of non-negotiable criteria"),
   // Generation provenance metadata
   engine: z.enum(["ai_model", "heuristic_fallback"]).default("ai_model"),
@@ -226,6 +229,7 @@ export const AssistantContextSchema = z.object({
   contentGoal: z.string().optional(),
   creatorId: z.string().optional(),
   additionalNotes: z.string().optional(),
+  preferredLanguage: SupportedLanguageSchema.optional(),
 });
 
 export type AssistantContext = z.infer<typeof AssistantContextSchema>;
@@ -234,6 +238,7 @@ export const ChatRequestSchema = z.object({
   messages: z.array(ChatMessageSchema).min(1, "At least one message is required"),
   userContext: AssistantContextSchema.optional(),
   sessionId: z.string().optional(),
+  preferredLanguage: SupportedLanguageSchema.optional(),
 });
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;

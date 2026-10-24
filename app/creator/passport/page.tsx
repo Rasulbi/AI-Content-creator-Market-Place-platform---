@@ -59,6 +59,59 @@ export default function SkillPassportPage() {
       setPassportItems(getStoredSkillPassport(matched.id));
     }
 
+    async function fetchDbSkills() {
+      try {
+        const queryParam = user?.id ? `?creatorId=${encodeURIComponent(user.id)}` : "";
+        const res = await fetch(`/api/v1/skills${queryParam}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.creatorSkills) && json.creatorSkills.length > 0) {
+            const mappedDbSkills: SkillPassportItem[] = json.creatorSkills.map((cs: any) => ({
+              id: cs.id,
+              creatorId: matched?.id || "ananya-rao",
+              skillName: cs.skills?.name || "AI Skill",
+              category: cs.skills?.category || "AI Creative Discipline",
+              status: cs.verification_status === "client_verified"
+                ? "Client Verified"
+                : cs.verification_status === "test_verified"
+                ? "Test Verified"
+                : cs.verification_status === "portfolio_evidence"
+                ? "Portfolio Evidence"
+                : "Claimed",
+              score: Number(cs.score) || 75,
+              associatedTools: [],
+              evidenceText: cs.evidence_text || undefined,
+              evidenceUrl: cs.evidence_url || undefined,
+              verifiedAt: cs.verified_at || undefined,
+            }));
+
+            setPassportItems((prev) => {
+              const names = new Set(mappedDbSkills.map((m) => m.skillName.toLowerCase()));
+              // Unmapped local items are strictly demoted to unverified Claimed state (Drafts)
+              const unmappedLocalSanitized = prev
+                .filter((p) => !names.has(p.skillName.toLowerCase()))
+                .map((p) => ({
+                  ...p,
+                  status: (p.status === "Portfolio Evidence" ? "Portfolio Evidence" : "Claimed") as VerificationStatus,
+                  score: Math.min(p.score, 50),
+                  testResult: undefined, // Strip unpersisted test results
+                  evidence: {
+                    ...p.evidence,
+                    verifiedDate: undefined,
+                    verifiedBy: undefined,
+                    auditBadgeHash: undefined,
+                  },
+                }));
+              return [...mappedDbSkills, ...unmappedLocalSanitized];
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Skill passport DB sync error:", err);
+      }
+    }
+    fetchDbSkills();
+
     const handleUpdate = () => {
       const refreshed = getStoredCreators();
       const current = user ? getCreatorById(user.id) || refreshed[0] : refreshed[0];
@@ -66,6 +119,7 @@ export default function SkillPassportPage() {
         setCreator(current);
         setPassportItems(getStoredSkillPassport(current.id));
       }
+      fetchDbSkills();
     };
 
     window.addEventListener("skill-passport-updated", handleUpdate);
@@ -293,10 +347,10 @@ export default function SkillPassportPage() {
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     statusFilter === status
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs"
+                      : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
                   {status}
@@ -312,7 +366,7 @@ export default function SkillPassportPage() {
               placeholder="Search skill passport..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-blue-500"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium text-slate-800"
             />
           </div>
         </div>

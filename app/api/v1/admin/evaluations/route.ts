@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/auth-helpers";
 import { evaluateTestSubmissionSchema } from "@/lib/validations";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json(
+        { error: "Database service (Supabase) is not configured." },
+        { status: 503 }
+      );
+    }
+
     const { user } = await requireAdmin();
     const body = await request.json();
     const validated = evaluateTestSubmissionSchema.parse(body);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { usersDb, UserRole } from "@/lib/auth-server";
+import { UserRole } from "@/lib/auth-server";
+import { isSupabaseConfigured, createClient, createAdminClient } from "@/lib/supabase/server";
 import { z, ZodError } from "zod";
 
 const LoginSchema = z.object({
@@ -14,43 +15,107 @@ export async function POST(req: NextRequest) {
     const validated = LoginSchema.parse(body);
 
     const email = validated.email.toLowerCase().trim();
-    const existing = usersDb.findByEmail(email);
 
-    if (!existing) {
+    if (!isSupabaseConfigured()) {
       return NextResponse.json(
         {
           success: false,
-          error: "No account found with this email. Please check your email or sign up.",
+          error: "Database service is not configured. Please configure Supabase credentials.",
+        },
+        { status: 503 }
+      );
+    }
+
+    // 1. Authenticate strictly against Supabase Auth (no custom hashing or hardcoded bypasses)
+    const supabase = await createClient();
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password: validated.password,
+    });
+
+    if (authError || !authData?.user) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "No account found with this email or invalid password. Please check your credentials or sign up.",
         },
         { status: 401 }
       );
     }
 
-    // Role check
-    if (existing.role !== validated.role) {
+    // 2. Query user profile from public.users
+    let { data: dbUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    // Self-healing backfill if public.users is missing for this account
+    if (!dbUser) {
+      const metaRoleRaw = authData.user.user_metadata?.role || "creator";
+      const metaRole = metaRoleRaw === "brand" ? "brand" : "creator";
+      const fullName =
+        authData.user.user_metadata?.full_name ||
+        authData.user.user_metadata?.name ||
+        email.split("@")[0];
+      const avatar =
+        metaRole === "brand" ? "/images/brand-user.jpg" : "/images/anjali.jpg";
+
+      const adminSupabase = createAdminClient();
+      const { data: backfilled } = await adminSupabase
+        .from("users")
+        .insert({
+          id: authData.user.id,
+          email: authData.user.email || email,
+          role: metaRole,
+          full_name: fullName,
+          avatar_url: avatar,
+          company_name: authData.user.user_metadata?.company_name || null,
+        })
+        .select()
+        .maybeSingle();
+
+      if (backfilled) {
+        dbUser = backfilled;
+      }
+
+      if (metaRole === "creator") {
+        const slug = `${fullName.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${authData.user.id.slice(0, 8)}`;
+        await adminSupabase.from("creator_profiles").upsert(
+          {
+            user_id: authData.user.id,
+            name: fullName,
+            slug,
+            category: authData.user.user_metadata?.category || "General AI",
+          },
+          { onConflict: "user_id" }
+        );
+      }
+    }
+
+    // 3. Strict server-side role check
+    const role = (dbUser?.role === "brand" ? "brand" : "influencer") as UserRole;
+    if (role !== validated.role) {
       return NextResponse.json(
         {
           success: false,
-          error: `This account is registered as a ${existing.role === "brand" ? "Brand" : "Creator"}, not a ${validated.role === "brand" ? "Brand" : "Creator"}. Please switch login tab.`,
+          error: `This account is registered as a ${role === "brand" ? "Brand" : "Creator"}, not a ${validated.role === "brand" ? "Brand" : "Creator"}. Please switch login tab.`,
         },
         { status: 400 }
       );
     }
 
-    // Password verification
-    const isValid = usersDb.verifyPassword(existing, validated.password);
-    if (!isValid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Incorrect password. Please try again.",
-        },
-        { status: 401 }
-      );
-    }
-
-    // Return sanitized profile
-    const { passwordHash: _p, salt: _s, ...userProfile } = existing;
+    // 4. Build sanitized user profile (never exposing password or sensitive metadata)
+    const userProfile = {
+      id: authData.user.id,
+      email: authData.user.email || email,
+      name: dbUser?.full_name || authData.user.user_metadata?.full_name || email.split("@")[0],
+      role,
+      companyName: dbUser?.company_name || undefined,
+      avatarUrl: dbUser?.avatar_url || (role === "brand" ? "/images/brand-user.jpg" : "/images/anjali.jpg"),
+      verified: true,
+      createdAt: dbUser?.created_at || new Date().toISOString(),
+    };
 
     const response = NextResponse.json({
       success: true,
@@ -58,11 +123,13 @@ export async function POST(req: NextRequest) {
       user: userProfile,
     });
 
+    // 5. Set hardened HTTP-only cookie synchronized with session
     response.cookies.set("ai_user_session", JSON.stringify(userProfile), {
       path: "/",
-      httpOnly: false,
+      httpOnly: true,
       maxAge: 60 * 60 * 24 * 7,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
 
     return response;

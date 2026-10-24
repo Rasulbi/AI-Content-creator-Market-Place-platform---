@@ -26,7 +26,17 @@ export class OpenRouterProvider implements AIModelProvider {
     const envModel =
       process.env.OPENROUTER_MODEL?.trim() ||
       process.env.AI_MODEL?.trim();
-    if (envModel && !envModel.startsWith("REPLACE_WITH_")) {
+    if (envModel && !envModel.startsWith("REPLACE_WITH_") && !envModel.startsWith("paste-")) {
+      // Normalize model names that lack OpenRouter namespace prefix (e.g. gemini-1.5-flash -> google/gemini-flash-1.5)
+      if (envModel.startsWith("gemini-")) {
+        return "google/gemini-flash-1.5";
+      }
+      if (envModel.startsWith("gpt-")) {
+        return `openai/${envModel}`;
+      }
+      if (envModel.startsWith("claude-")) {
+        return `anthropic/${envModel}`;
+      }
       return envModel;
     }
     // Safe default if AI_MODEL is unset or still set to template placeholder

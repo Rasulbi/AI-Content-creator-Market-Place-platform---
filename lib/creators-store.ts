@@ -56,13 +56,62 @@ export function getCreatorById(id: string): Creator | undefined {
   return all.find((c) => c.id === id || c.id.toLowerCase() === id.toLowerCase());
 }
 
+export function upsertCreator(creator: Creator): Creator {
+  const all = [...getStoredCreators()];
+  const idx = all.findIndex(
+    (c) => c.id === creator.id || c.id.toLowerCase() === creator.id.toLowerCase()
+  );
+  if (idx !== -1) {
+    all[idx] = { ...all[idx], ...creator };
+  } else {
+    all.push(creator);
+  }
+  saveStoredCreators(all);
+  return creator;
+}
+
 /**
  * Updates a creator's profile
  */
 export function updateCreator(id: string, updates: Partial<Creator>): Creator | null {
   const all = [...getStoredCreators()];
-  const idx = all.findIndex((c) => c.id === id);
-  if (idx === -1) return null;
+  const idx = all.findIndex((c) => c.id === id || c.id.toLowerCase() === id.toLowerCase());
+
+  if (idx === -1) {
+    const newCreator: Creator = {
+      id,
+      name: updates.name || "AI Creator",
+      professionalTitle: updates.professionalTitle || "AI Content Creator",
+      category: updates.category || "General AI",
+      avatar: updates.avatar || "/images/anjali.jpg",
+      followers: updates.followers || "12.5K",
+      followersCount: updates.followersCount || 12500,
+      engagementRate: updates.engagementRate || "4.8%",
+      engagementNum: updates.engagementNum || 4.8,
+      location: updates.location || "Remote",
+      experience: updates.experience || "GenAI Creator",
+      clientRating: updates.clientRating || 5.0,
+      reviewsCount: updates.reviewsCount || 0,
+      reviews: updates.reviews || [],
+      isVerified: updates.isVerified || false,
+      priceRange: updates.priceRange || "₹3,500 - ₹6,000/hr",
+      bio: updates.bio || "",
+      aiTools: updates.aiTools || ["Midjourney v6", "Runway Gen-3"],
+      previousBrandCollabs: updates.previousBrandCollabs || [],
+      contentTypes: updates.contentTypes || ["AI Commercial Reel & UGC"],
+      platforms: updates.platforms || ["Instagram Reels", "YouTube Shorts"],
+      baseMatchScore: updates.baseMatchScore || 85,
+      availability: updates.availability || "Available for immediate hire",
+      portfolioCount: updates.portfolioCount || 0,
+      skills: updates.skills || [],
+      verifiedSkills: updates.verifiedSkills || [],
+      portfolio: updates.portfolio || [],
+      ...updates,
+    };
+    all.push(newCreator);
+    saveStoredCreators(all);
+    return newCreator;
+  }
 
   const current = all[idx];
   const updated: Creator = {
@@ -74,6 +123,11 @@ export function updateCreator(id: string, updates: Partial<Creator>): Creator | 
     portfolio: updates.portfolio || current.portfolio,
     aiTools: updates.aiTools || current.aiTools,
     experience: updates.experience !== undefined ? updates.experience : current.experience,
+    availability: updates.availability || current.availability,
+    priceRange: updates.priceRange || current.priceRange,
+    location: updates.location !== undefined ? updates.location : current.location,
+    bio: updates.bio !== undefined ? updates.bio : current.bio,
+    name: updates.name || current.name,
   };
 
   all[idx] = updated;

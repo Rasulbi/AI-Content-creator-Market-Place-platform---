@@ -1,6 +1,8 @@
 import { AIModelProvider, AIProviderId } from "./provider-interface";
+import { GeminiProvider } from "./gemini-provider";
 import { OpenRouterProvider } from "./openrouter-provider";
 import { GrokProvider } from "./grok-provider";
+import { OpenAIProvider } from "./openai-provider";
 import { aiLogger } from "./logger";
 
 export type SupportedAIProvider = AIProviderId;
@@ -8,28 +10,40 @@ export type SupportedAIProvider = AIProviderId;
 /**
  * AI Provider Factory
  * Resolves the configured provider dynamically using the AI_PROVIDER environment variable.
- * Defaults to "openrouter" as primary provider.
+ * Defaults to "gemini" (Google Gemini) as primary provider.
  */
 export function getAIProvider(explicitProvider?: string): AIModelProvider {
   const rawProvider = (
     explicitProvider ||
     (typeof process !== "undefined" ? process.env.AI_PROVIDER : "") ||
-    "openrouter"
+    "gemini"
   )
     .toLowerCase()
     .trim();
+
+  if (rawProvider === "gemini" || rawProvider === "google") {
+    return new GeminiProvider();
+  }
+
+  if (rawProvider === "openrouter") {
+    return new OpenRouterProvider();
+  }
 
   if (rawProvider === "groq" || rawProvider === "grok" || rawProvider === "xai") {
     return new GrokProvider();
   }
 
-  if (rawProvider !== "openrouter" && rawProvider !== "") {
+  if (rawProvider === "openai") {
+    return new OpenAIProvider();
+  }
+
+  if (rawProvider !== "gemini" && rawProvider !== "") {
     aiLogger.warn(
-      `Unrecognized AI_PROVIDER "${rawProvider}". Defaulting to "openrouter". Supported options: openrouter, grok`
+      `Unrecognized AI_PROVIDER "${rawProvider}". Defaulting to "gemini". Supported options: gemini, openrouter, grok, openai`
     );
   }
 
-  return new OpenRouterProvider();
+  return new GeminiProvider();
 }
 
 /**
@@ -47,12 +61,18 @@ export function getAIConfigurationStatus(): {
 
   let statusMessage = "Configured and ready.";
   if (!isConfigured) {
-    if (provider.id === "openrouter") {
+    if (provider.id === "gemini") {
+      statusMessage =
+        "GEMINI_API_KEY is missing or invalid. Set GEMINI_API_KEY in .env.local or fallback engine will be used.";
+    } else if (provider.id === "openrouter") {
       statusMessage =
         "OPENROUTER_API_KEY is missing or invalid. Set OPENROUTER_API_KEY in .env.local or fallback engine will be used.";
+    } else if (provider.id === "openai") {
+      statusMessage =
+        "OPENAI_API_KEY is missing or invalid. Set OPENAI_API_KEY in .env.local or fallback engine will be used.";
     } else {
       statusMessage =
-        "XAI_API_KEY is missing or invalid. Set XAI_API_KEY in .env.local or fallback engine will be used.";
+        "GROQ_API_KEY or XAI_API_KEY is missing or invalid. Set in .env.local or fallback engine will be used.";
     }
   }
 

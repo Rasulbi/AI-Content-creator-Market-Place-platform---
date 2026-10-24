@@ -29,11 +29,24 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { ChatMessage, AssistantContext } from "@/lib/ai/types";
+import {
+  RecommendedCreatorItem,
+  RecommendedCampaignItem,
+  CreatorComparisonItem,
+} from "@/lib/ai/chatbot-engine";
+import {
+  RecommendedCreatorCard,
+  RecommendedCampaignCard,
+  CreatorComparisonCard,
+} from "@/components/ai/ChatbotCards";
 
 interface EnrichedChatMessage extends ChatMessage {
   provider?: string;
   model?: string;
   timestamp?: string;
+  recommendedCreators?: RecommendedCreatorItem[];
+  recommendedCampaigns?: RecommendedCampaignItem[];
+  comparisonData?: CreatorComparisonItem[];
 }
 
 const PLATFORMS = [
@@ -75,6 +88,8 @@ export default function AssistantWorkspacePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [sessionId, setSessionId] = useState<string>("");
 
+  const isBrand = userRole === "brand";
+
   // Safely initialize session ID after component mounts to avoid prerendering errors
   useEffect(() => {
     try {
@@ -88,43 +103,79 @@ export default function AssistantWorkspacePage() {
         try {
           sessionStorage.setItem("ai_assistant_page_session", created);
         } catch {
-          // sessionStorage restricted or quota exceeded
+          // sessionStorage restricted
         }
         setSessionId(created);
       }
     } catch {
-      // Handle blocked storage in strict private mode
       setSessionId(`page_sess_${Date.now()}`);
     }
   }, []);
 
-  const defaultGreeting: EnrichedChatMessage = {
+  const getGreeting = (role: "brand" | "creator"): EnrichedChatMessage => ({
     role: "assistant",
-    content: `👋 **Welcome to the AI Content & Marketing Assistant Workspace!**\n\nI am your 24/7 creative director, scriptwriter, and growth consultant.\n\n### What we can create together:
-- 🎬 **Vertical Video Scripts**: 15s, 30s, or 60s Reel/Short scripts with shot lists, hooks & audio cues
-- ✍️ **Viral Hooks & Captions**: Multi-platform copy with high-save hashtag clusters
-- 💼 **Brand Campaigns & Briefs**: Influencer outreach letters, deliverable scopes, and pricing benchmarks
-- 🛍️ **Product Copy & Sales Frameworks**: AIDA & PAS promotional angles
-- 📅 **7-Day Omnichannel Calendars**: Structured schedules with strategic daily formats
-- 🔄 **Rewriting & Polishing**: Translating, summarizing, or adapting your existing drafts
+    content:
+      role === "brand"
+        ? `👋 **Welcome to the AI Assistant for Brand Owners & Marketers.**\n\nI help brands discover high-matching AI creators, compare talent, plan viral campaigns, and formulate product marketing strategies:\n\n### What I Can Do For You:
+- 🔍 **Creator Discovery**: Recommend top creators for skincare, fashion, technology, and food
+- ⚖️ **Creator Comparison**: Side-by-side comparison of engagement, followers, ratings, and rates
+- 💰 **Budget Matching**: Find best creators for budgets starting from ₹10,000
+- 🎬 **Campaign Formats**: 15s/30s Instagram Reel briefs and deliverable outlines
+- 👟 **Brand Strategy**: Marketing strategies for brands like Nike, Samsung, and indie labels
 
-Enter any custom request below, or select from the prompt templates to start!`,
+Select any prompt below or describe your product to begin!`
+        : `👋 **Welcome to the AI Creative & Collaboration Workspace!**\n\nI am your 24/7 creative director, scriptwriter, and brand partnership consultant.\n\n### What We Can Create Together:
+- 💼 **Brand & Campaign Discovery**: Match your profile with active marketplace briefs
+- 🎬 **Vertical Video Scripts**: 15s, 30s, or 60s Reel/Short scripts with scene-by-scene hooks
+- ✍️ **Viral Hooks & Captions**: High-converting hooks and high-save hashtag clusters
+- 🤝 **Collaboration Proposals**: Professional pitch letters for fashion, beauty, tech, and fitness brands
+- 📈 **Profile Optimization**: Actionable tips to boost your engagement rate and verification score
+
+Select an action below or enter your custom request to get started!`,
     provider: "AI Assistant",
     timestamp: "Just now",
-  };
+  });
 
-  const [messages, setMessages] = useState<EnrichedChatMessage[]>([defaultGreeting]);
+  const [messages, setMessages] = useState<EnrichedChatMessage[]>([getGreeting(userRole)]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([
-    "Suggest 3 viral content ideas for my niche",
-    "How can I increase audience engagement and saves?",
-    "Write a 30s Reel script with shot list and hooks",
-    "Create a weekly content calendar",
-    "How should I price commercial ad usage rights?",
-  ]);
+
+  const brandQuickActions = [
+    { label: "🔍 Skincare Creators", query: "I want to promote a skincare product. Which creators are suitable?" },
+    { label: "👗 Women's Fashion", query: "Suggest creators for a women's fashion brand." },
+    { label: "💰 Budget ₹10,000", query: "Which creator is best for my product with a budget of ₹10,000?" },
+    { label: "⚖️ Compare Creators", query: "Compare three top creators in Technology and recommend the best match." },
+    { label: "🎬 15s Reel Campaign", query: "Suggest a 15-second Instagram Reel campaign for my clothing brand." },
+    { label: "👟 Nike Strategy", query: "Suggest a marketing strategy for Nike shoes." },
+    { label: "📱 Samsung Smartphone", query: "How can I promote a Samsung smartphone with AI creators?" },
+  ];
+
+  const creatorQuickActions = [
+    { label: "💼 Find Matching Campaigns", query: "Which campaigns match my skills and audience?" },
+    { label: "💡 Skincare Content Ideas", query: "Suggest content ideas for a skincare product." },
+    { label: "🎬 15s Instagram Reel", query: "How can I create a 15-second Instagram Reel?" },
+    { label: "🤝 Brand Proposal", query: "Write a collaboration proposal for a clothing brand." },
+    { label: "👗 Fashion Brands", query: "Which brands are suitable for my fashion profile?" },
+    { label: "📈 Boost Profile & Score", query: "How can I improve my profile and AI match score?" },
+  ];
+
+  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(
+    isBrand
+      ? [
+          "I want to promote a skincare product. Which creators are suitable?",
+          "Suggest creators for a women's fashion brand.",
+          "Which creator is best for my product with a budget of ₹10,000?",
+          "Suggest a 15-second Instagram Reel campaign for my clothing brand.",
+        ]
+      : [
+          "Which brands are suitable for my fashion profile?",
+          "Suggest content ideas for a skincare product.",
+          "How can I create a 15-second Instagram Reel?",
+          "Write a collaboration proposal for a clothing brand.",
+        ]
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -134,9 +185,48 @@ Enter any custom request below, or select from the prompt templates to start!`,
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
-      setUserRole(user.role === "brand" ? "brand" : "creator");
+      const role = user.role === "brand" ? "brand" : "creator";
+      setUserRole(role);
+      setMessages([getGreeting(role)]);
+      setSuggestedPrompts(
+        role === "brand"
+          ? [
+              "I want to promote a skincare product. Which creators are suitable?",
+              "Suggest creators for a women's fashion brand.",
+              "Which creator is best for my product with a budget of ₹10,000?",
+              "Suggest a 15-second Instagram Reel campaign for my clothing brand.",
+            ]
+          : [
+              "Which brands are suitable for my fashion profile?",
+              "Suggest content ideas for a skincare product.",
+              "How can I create a 15-second Instagram Reel?",
+              "Write a collaboration proposal for a clothing brand.",
+            ]
+      );
     }
   }, []);
+
+  const handleRoleChange = (newRole: "creator" | "brand") => {
+    setUserRole(newRole);
+    if (messages.length <= 1) {
+      setMessages([getGreeting(newRole)]);
+    }
+    setSuggestedPrompts(
+      newRole === "brand"
+        ? [
+            "I want to promote a skincare product. Which creators are suitable?",
+            "Suggest creators for a women's fashion brand.",
+            "Which creator is best for my product with a budget of ₹10,000?",
+            "Suggest a 15-second Instagram Reel campaign for my clothing brand.",
+          ]
+        : [
+            "Which brands are suitable for my fashion profile?",
+            "Suggest content ideas for a skincare product.",
+            "How can I create a 15-second Instagram Reel?",
+            "Write a collaboration proposal for a clothing brand.",
+          ]
+    );
+  };
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -150,7 +240,6 @@ Enter any custom request below, or select from the prompt templates to start!`,
     const text = (textToSend || input).trim();
     if (!text || loading) return;
 
-    // Ensure session ID is initialized before making the API request
     let activeSessionId = sessionId;
     if (!activeSessionId) {
       activeSessionId = `page_sess_${Date.now()}`;
@@ -175,7 +264,10 @@ Enter any custom request below, or select from the prompt templates to start!`,
           {
             role: "user",
             content: text,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           },
         ];
 
@@ -220,7 +312,13 @@ Enter any custom request below, or select from the prompt templates to start!`,
           content: data.message,
           provider: data.provider,
           model: data.model,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          recommendedCreators: data.recommendedCreators,
+          recommendedCampaigns: data.recommendedCampaigns,
+          comparisonData: data.comparisonData,
         },
       ]);
 
@@ -235,7 +333,10 @@ Enter any custom request below, or select from the prompt templates to start!`,
             role: "assistant",
             content: "⏹️ *[Generation was stopped by the user]*",
             provider: "user-stopped",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           },
         ]);
         return;
@@ -274,7 +375,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
 
   const handleReset = () => {
     handleStop();
-    setMessages([defaultGreeting]);
+    setMessages([getGreeting(userRole)]);
     setError(null);
     setInput("");
   };
@@ -292,40 +393,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   };
 
-  const promptCategories = [
-    {
-      category: "Reels & Scripts",
-      icon: Film,
-      prompts: [
-        `Write a 30s viral Reel script for ${niche} with shot list and hooks`,
-        `Create a high-retention 15s TikTok concept demonstrating ${brandOrProduct || "AI video workflow"}`,
-      ],
-    },
-    {
-      category: "Captions & Hooks",
-      icon: PenTool,
-      prompts: [
-        `Give me 5 viral hooks and a high-converting caption with hashtags for ${platform}`,
-        `Generate 3 persuasive calls-to-action (CTAs) that maximize comment velocity`,
-      ],
-    },
-    {
-      category: "Brand & Campaigns",
-      icon: Briefcase,
-      prompts: [
-        `Draft an influencer collaboration brief for a ${niche} product launch`,
-        `Write a 3-sentence sponsorship pitch letter to a brand team`,
-      ],
-    },
-    {
-      category: "Strategy & Calendar",
-      icon: Calendar,
-      prompts: [
-        `Create a 7-day content schedule for ${platform} optimized for ${goal}`,
-        `How can I increase my audience retention rate within the first 3 seconds?`,
-      ],
-    },
-  ];
+  const activeQuickActions = isBrand ? brandQuickActions : creatorQuickActions;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
@@ -333,7 +401,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
       <header className="bg-slate-950/80 border-b border-slate-800 backdrop-blur sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 sm:gap-6">
           <Link
-            href={userRole === "brand" ? "/brand/dashboard" : "/creator/dashboard"}
+            href={isBrand ? "/brand/dashboard" : "/creator/dashboard"}
             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -342,11 +410,32 @@ Enter any custom request below, or select from the prompt templates to start!`,
 
           <div className="h-4 w-px bg-slate-800 hidden sm:block" />
 
-          <Logo size="sm" />
+          <Logo size="sm" theme="light" />
 
-          <div className="hidden lg:flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-full text-xs font-semibold text-indigo-400">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Marketing & Creative Workspace</span>
+          {/* Role Toggle Pill in Header */}
+          <div className="flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-800 text-xs">
+            <button
+              type="button"
+              onClick={() => handleRoleChange("brand")}
+              className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+                isBrand
+                  ? "bg-indigo-600 text-white font-semibold shadow-xs"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              🏢 Brand Owner
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange("creator")}
+              className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+                !isBrand
+                  ? "bg-indigo-600 text-white font-semibold shadow-xs"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              🎨 Creator
+            </button>
           </div>
         </div>
 
@@ -362,7 +451,11 @@ Enter any custom request below, or select from the prompt templates to start!`,
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Context Settings</span>
-            {showSettings ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {showSettings ? (
+              <ChevronUp className="w-3 h-3" />
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
           </button>
 
           <button
@@ -387,16 +480,19 @@ Enter any custom request below, or select from the prompt templates to start!`,
                 Customize Target Audience, Platform, & Desired Tone
               </span>
               <span className="text-[11px] text-slate-400">
-                Active Role: <strong className="text-white uppercase">{userRole}</strong>
+                Active Perspective:{" "}
+                <strong className="text-white uppercase">{userRole}</strong>
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Role Perspective</label>
+                <label className="block text-[11px] text-slate-400 mb-1">
+                  Role Perspective
+                </label>
                 <select
                   value={userRole}
-                  onChange={(e) => setUserRole(e.target.value as "creator" | "brand")}
+                  onChange={(e) => handleRoleChange(e.target.value as "creator" | "brand")}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 outline-none focus:border-indigo-500"
                 >
                   <option value="creator">Creator / Influencer</option>
@@ -459,7 +555,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
                   type="text"
                   value={brandOrProduct}
                   onChange={(e) => setBrandOrProduct(e.target.value)}
-                  placeholder="e.g. Lumina Glow Serum, SaaS Pro"
+                  placeholder="e.g. Nike Air Max, Samsung S24, Glow Serum"
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500"
                 />
               </div>
@@ -499,7 +595,7 @@ Enter any custom request below, or select from the prompt templates to start!`,
                 )}
 
                 <div
-                  className={`max-w-[90%] sm:max-w-[82%] rounded-2xl p-4 sm:p-5 text-xs sm:text-sm leading-relaxed shadow-sm ${
+                  className={`max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 sm:p-5 text-xs sm:text-sm leading-relaxed shadow-sm ${
                     isUser
                       ? "bg-indigo-600 text-white rounded-tr-none"
                       : "bg-slate-800/90 text-slate-100 rounded-tl-none border border-slate-700/80"
@@ -508,6 +604,52 @@ Enter any custom request below, or select from the prompt templates to start!`,
                   <div className="whitespace-pre-wrap font-sans space-y-3">
                     {m.content}
                   </div>
+
+                  {/* Render Recommended Creators */}
+                  {!isUser &&
+                    m.recommendedCreators &&
+                    m.recommendedCreators.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-700/60 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-indigo-400" />
+                          <h4 className="font-bold text-xs text-white">
+                            Verified Creator Recommendations ({m.recommendedCreators.length}{" "}
+                            Matches)
+                          </h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {m.recommendedCreators.map((creator) => (
+                            <RecommendedCreatorCard key={creator.id} creator={creator} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Render Recommended Campaigns */}
+                  {!isUser &&
+                    m.recommendedCampaigns &&
+                    m.recommendedCampaigns.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-700/60 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-indigo-400" />
+                          <h4 className="font-bold text-xs text-white">
+                            Matching Brand Campaigns ({m.recommendedCampaigns.length})
+                          </h4>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {m.recommendedCampaigns.map((camp) => (
+                            <RecommendedCampaignCard key={camp.id} campaign={camp} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Render Head-to-Head Comparison Table */}
+                  {!isUser && m.comparisonData && m.comparisonData.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-slate-700/60">
+                      <CreatorComparisonCard comparison={m.comparisonData} />
+                    </div>
+                  )}
 
                   {!isUser && (
                     <div className="mt-3.5 pt-2.5 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400">
@@ -563,43 +705,36 @@ Enter any custom request below, or select from the prompt templates to start!`,
             );
           })}
 
-          {/* Categorized Template Chips */}
+          {/* Quick-Start Role Cards */}
           {messages.length === 1 && (
             <div className="pt-2 pb-2 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
-                <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Quick-Start Prompt Templates</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>
+                    Quick-Start Questions for {isBrand ? "Brand Owners" : "Creators"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500">Click to run immediately</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {promptCategories.map((cat, ci) => {
-                  const CatIcon = cat.icon;
-                  return (
-                    <div
-                      key={ci}
-                      className="bg-slate-800/60 rounded-2xl p-3.5 border border-slate-700/60 space-y-2"
-                    >
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-300">
-                        <CatIcon className="w-4 h-4 text-indigo-400" />
-                        <span>{cat.category}</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {cat.prompts.map((p, pi) => (
-                          <button
-                            key={pi}
-                            type="button"
-                            onClick={() => handleSend(p)}
-                            disabled={loading}
-                            className="w-full text-left text-xs leading-snug p-2.5 rounded-xl bg-slate-900/80 hover:bg-indigo-900/40 border border-slate-800 hover:border-indigo-700/60 transition cursor-pointer text-slate-300 flex items-start justify-between gap-1 group"
-                          >
-                            <span className="line-clamp-2">{p}</span>
-                            <Sparkles className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 shrink-0 mt-0.5 transition" />
-                          </button>
-                        ))}
-                      </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {activeQuickActions.map((action, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSend(action.query)}
+                    className="p-3.5 rounded-2xl bg-slate-800/80 hover:bg-indigo-950/50 border border-slate-700/80 hover:border-indigo-600/50 text-left transition group cursor-pointer shadow-xs"
+                  >
+                    <div className="font-semibold text-xs text-slate-200 group-hover:text-indigo-300 flex items-center justify-between">
+                      <span>{action.label}</span>
+                      <Sparkles className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 transition" />
                     </div>
-                  );
-                })}
+                    <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                      &quot;{action.query}&quot;
+                    </p>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -613,7 +748,11 @@ Enter any custom request below, or select from the prompt templates to start!`,
               <div className="bg-slate-800 border border-slate-700 px-4 py-3 rounded-2xl shadow-sm text-slate-200 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                  <span>Formulating strategic recommendations...</span>
+                  <span>
+                    {isBrand
+                      ? "Analyzing marketplace creators and campaign alignment..."
+                      : "Matching campaigns and formulating content hooks..."}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -686,7 +825,11 @@ Enter any custom request below, or select from the prompt templates to start!`,
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               maxLength={4000}
-              placeholder="Ask for Reel scripts, hooks, ad copy, outreach letters, translations... (Shift+Enter for newline)"
+              placeholder={
+                isBrand
+                  ? "Ask about creators for skincare, fashion, budget ₹10,000, comparison, Nike shoes... (Shift+Enter for newline)"
+                  : "Ask for brand recommendations, skincare ideas, 15s Reel scripts, collaboration proposals... (Shift+Enter for newline)"
+              }
               disabled={loading}
               aria-label="Enter your marketing or creative request"
               className="w-full px-3 py-2 bg-transparent text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-40 overflow-y-auto leading-relaxed"

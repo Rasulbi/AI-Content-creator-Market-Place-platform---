@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { verificationService, VerificationService } from "../../lib/ai/verification-service";
+import { AIModelProvider } from "../../lib/ai/provider-interface";
 import {
   VerifyCreatorsInputSchema,
   VerifyCreatorsOutputSchema,
@@ -166,6 +167,65 @@ describe("AI Profile Verification Service & Evidence Engine", () => {
         assert.equal(item.isDemo, true);
         assert.ok(item.authenticityNotice.toLowerCase().includes("campaign"));
       }
+    });
+  });
+
+  describe("Targeted AI Provenance & Fallback Truthfulness", () => {
+    it("should return isFallback: true and Rule-Based Audit Engine when AI provider is unconfigured or fails", async () => {
+      const failingProvider: AIModelProvider = {
+        id: "gemini",
+        name: "Mock Failing Gemini Provider",
+        model: "gemini-2.5-flash",
+        isConfigured: () => false, // unconfigured
+        generateText: async () => {
+          throw new Error("Provider not configured");
+        },
+        generateStructuredJSON: async () => {
+          throw new Error("Provider not configured");
+        },
+      };
+
+      const customService = new VerificationService(failingProvider);
+      const output = await customService.verifyCreators(sampleInput);
+
+      assert.equal(output.isFallback, true, "Overall output must indicate isFallback: true");
+      assert.equal(output.engine, "heuristic_fallback", "Overall output must indicate heuristic_fallback engine");
+      assert.equal(output.provider, "Heuristic Audit Engine", "Provider must truthfully reflect Heuristic Audit Engine");
+
+      for (const item of output.verifications) {
+        assert.equal(item.isFallback, true, "Item must indicate isFallback: true");
+        assert.equal(item.engine, "heuristic_fallback", "Item engine must be heuristic_fallback");
+        assert.equal(item.modelUsed, "Rule-Based Audit Engine", "Model must not falsely claim Gemini model was used");
+        assert.equal(item.isAIAssisted, false, "Item isAIAssisted must be false on heuristic fallback");
+      }
+    });
+
+    it("should record actual model and engine: ai_model when model call genuinely succeeds", async () => {
+      const successfulProvider: AIModelProvider = {
+        id: "gemini",
+        name: "Google Gemini",
+        model: "gemini-2.5-flash",
+        isConfigured: () => true,
+        generateText: async () => "Refined match",
+        generateStructuredJSON: async <T>(): Promise<T> =>
+          [
+            { creatorId: "ananya-rao", matchExplanation: "Audited and verified by Gemini 2.5 Flash for high skincare match." },
+          ] as unknown as T,
+      };
+
+      const customService = new VerificationService(successfulProvider);
+      const output = await customService.verifyCreators(sampleInput);
+
+      assert.equal(output.isFallback, false, "Output must have isFallback: false on model success");
+      assert.equal(output.engine, "ai_model", "Output engine must be ai_model");
+      assert.equal(output.provider, "Google Gemini", "Output provider must be Google Gemini");
+
+      const ananyaItem = output.verifications.find((v) => v.creatorId === "ananya-rao");
+      assert.ok(ananyaItem, "Ananya Rao should be in results");
+      assert.equal(ananyaItem.isFallback, false, "Matched item must have isFallback: false");
+      assert.equal(ananyaItem.engine, "ai_model", "Matched item must have engine: ai_model");
+      assert.equal(ananyaItem.modelUsed, "gemini-2.5-flash", "Matched item modelUsed must record actual model");
+      assert.equal(ananyaItem.matchExplanation, "Audited and verified by Gemini 2.5 Flash for high skincare match.");
     });
   });
 });
