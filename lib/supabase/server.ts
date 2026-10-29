@@ -88,6 +88,23 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
 }
 
 /**
+ * Creates a server-side Supabase client for reading public data (such as creator profiles
+ * and public catalogs) without reading or binding to request cookies.
+ * This allows public data to be fetched and prerendered safely during build or within Cache Components.
+ */
+export function createPublicServerClient(): SupabaseClient<Database> {
+  const supabaseUrl = resolveSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const supabaseAnonKey = resolveSupabaseKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+/**
  * Creates an elevated Supabase client with the Service Role key.
  * Bypasses Row Level Security (RLS) for server-side evaluation, automated grading,
  * and administrative operations.
