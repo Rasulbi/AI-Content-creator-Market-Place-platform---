@@ -8,12 +8,12 @@ import crypto from "crypto";
 
 export async function GET(request: NextRequest) {
   try {
+    // 1. Enforce server-side authentication FIRST
+    const auth = await requireAuth();
+
     if (!isSupabaseConfigured()) {
       return NextResponse.json({ data: [] });
     }
-
-    // Enforce server-side authentication
-    const auth = await requireAuth();
 
     const { searchParams } = new URL(request.url);
     const creatorIdParam = searchParams.get("creatorId");
@@ -237,14 +237,15 @@ export function evaluateSkillTest({
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Enforce creator authentication FIRST
+    const { profile } = await getCurrentCreatorProfile();
+
     if (!isSupabaseConfigured()) {
       return NextResponse.json(
         { error: "Database service (Supabase) is not configured." },
         { status: 503 }
       );
     }
-
-    const { profile } = await getCurrentCreatorProfile();
     const body = await request.json();
 
     const normalizedBody = {

@@ -1,0 +1,2 @@
+# Netlify redirect rules
+# Next.js dynamic routes, SSR, and API endpoints are managed by @netlify/plugin-nextjs
