@@ -8,7 +8,7 @@ A modern SaaS platform and AI Matching engine connecting brands with verified AI
 
 Before running the application on Windows, macOS, or Linux, ensure you have:
 
-1. **Node.js** (v18.18 or higher; recommended: **Node.js v20.x or v22.x LTS**)
+1. **Node.js** (v22 or higher; the project and Netlify use **Node.js v22.x**). Run `nvm use` to select the version in `.nvmrc`.
    * Check if installed:
      ```bash
      node -v
