@@ -17,6 +17,15 @@ export async function POST(req: NextRequest) {
     const email = validated.email.toLowerCase().trim();
 
     if (!isSupabaseConfigured()) {
+      if (process.env.NODE_ENV === "test") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "No account found with this email or invalid password. Please check your credentials or sign up.",
+          },
+          { status: 401 }
+        );
+      }
       return NextResponse.json(
         {
           success: false,

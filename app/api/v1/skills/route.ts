@@ -177,11 +177,12 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    // 1. Enforce creator authentication FIRST
+    const { profile } = await getCurrentCreatorProfile();
+
     if (!isSupabaseConfigured()) {
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
     }
-
-    const { profile } = await getCurrentCreatorProfile();
     const { searchParams } = new URL(request.url);
     const skillId = searchParams.get("skillId");
 

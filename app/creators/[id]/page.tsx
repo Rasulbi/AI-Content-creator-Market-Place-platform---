@@ -1,9 +1,10 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Creator } from "@/lib/creators-data";
 import { DEMO_CREATORS } from "@/lib/demo-creators";
 import { getDatabaseCreatorById } from "@/lib/creators-catalog";
 import { CreatorProfileView } from "@/components/creator/CreatorProfileView";
+import { CreatorProfileSkeleton } from "@/components/creator/CreatorProfileSkeleton";
 
 export function generateStaticParams() {
   return DEMO_CREATORS.map((creator) => ({
@@ -39,7 +40,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function CreatorProfilePage({
+async function CreatorProfileContent({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -52,4 +53,16 @@ export default async function CreatorProfilePage({
   }
 
   return <CreatorProfileView creator={creator} />;
+}
+
+export default function CreatorProfilePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  return (
+    <Suspense fallback={<CreatorProfileSkeleton />}>
+      <CreatorProfileContent params={params} />
+    </Suspense>
+  );
 }

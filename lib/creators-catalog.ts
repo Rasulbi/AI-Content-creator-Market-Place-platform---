@@ -1,4 +1,4 @@
-import { createClient, isSupabaseConfigured } from "./supabase/server";
+import { createClient, createPublicServerClient, isSupabaseConfigured } from "./supabase/server";
 import { Creator, PortfolioProject } from "./creators-data";
 import { DEMO_CREATORS, getDemoCreatorById } from "./demo-creators";
 
@@ -113,7 +113,7 @@ export async function getDatabaseCreators(options: CreatorCatalogOptions = {}): 
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createPublicServerClient();
 
     let query = supabase
       .from("creator_profiles")
@@ -201,7 +201,7 @@ export async function getDatabaseCreatorById(
 
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createClient();
+      const supabase = createPublicServerClient();
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
       let query = supabase

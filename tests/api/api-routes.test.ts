@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { loadEnvConfig } from "@next/env";
 
+(process.env as any).NODE_ENV = process.env.NODE_ENV || "test";
 loadEnvConfig(process.cwd());
 
 // Import route handlers directly

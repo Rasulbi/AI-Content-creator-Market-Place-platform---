@@ -171,17 +171,7 @@ export async function PUT(req: NextRequest) {
 
     const validated = UpdateProfileSchema.parse(rawBody);
 
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Database service is not configured. Profile updates require Supabase connection.",
-        },
-        { status: 503 }
-      );
-    }
-
-    // Authenticate via Supabase Auth server verification
+    // Authenticate via Supabase Auth server verification FIRST
     const supabase = await createClient();
     const { data: authData, error: authErr } = await supabase.auth.getUser();
 
@@ -192,6 +182,16 @@ export async function PUT(req: NextRequest) {
           error: "Authentication required. Please log in to update your profile.",
         },
         { status: 401 }
+      );
+    }
+
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database service is not configured. Profile updates require Supabase connection.",
+        },
+        { status: 503 }
       );
     }
 
